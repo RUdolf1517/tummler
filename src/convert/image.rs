@@ -5,7 +5,7 @@ use std::path::Path;
 
 const BUF: usize = 256 * 1024;
 
-/// Конвертация изображений через crate `image`
+/// Image conversion via the `image` crate
 pub fn convert_image(input: &Path, output: &Path, quality: Option<u8>) -> Result<(), TummlerError> {
     let output_ext = output
         .extension()
@@ -35,10 +35,10 @@ pub fn convert_image(input: &Path, output: &Path, quality: Option<u8>) -> Result
         }
         _ => {
             let fmt = image_format_from_ext(&output_ext).ok_or_else(|| {
-                TummlerError::ImageError(format!("Неподдерживаемый формат вывода {output_ext}"))
+                TummlerError::ImageError(format!("unsupported output format {output_ext}"))
             })?;
             img.save_with_format(output, fmt)
-                .map_err(|e| TummlerError::ImageError(format!("Не удалось сохранить {output_ext}: {e}")))?;
+                .map_err(|e| TummlerError::ImageError(format!("failed to save {output_ext}: {e}")))?;
         }
     }
 

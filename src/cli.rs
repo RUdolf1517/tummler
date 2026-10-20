@@ -5,25 +5,25 @@ use crate::completions::ShellKind;
 use crate::ui::ColorWhen;
 
 const AFTER_HELP: &str = "\
-Примеры:
+Examples:
   tummler photo.png jpg
   tummler photo.png jpeg -q 80
   tummler photo.png -o photo.webp
   cat in.png | tummler - jpeg > out.jpeg
   tummler -- -file.png jpeg
 
-Коды выхода:
-  0  успех
-  1  ошибка конвертации
-  2  неверные аргументы
+Exit codes:
+  0  success
+  1  conversion error
+  2  invalid arguments
 
-Последний аргумент — формат, если это известное расширение.
-`--` отделяет файлы, чьи имена начинаются с `-`.
+The last argument is the format if it is a known extension.
+`--` separates files whose names start with `-`.
 ";
 
-/// tummler — универсальный конвертер файлов
+/// tummler — universal file converter
 ///
-/// Примеры:
+/// Examples:
 ///   tummler photo.png jpg
 ///   tummler photo.png webp -q 80
 ///   tummler photo.png -o photo.webp
@@ -38,75 +38,75 @@ const AFTER_HELP: &str = "\
     next_line_help = false
 )]
 pub struct Cli {
-    /// Входные файлы или директории, последним — формат: tummler img.png jpg
+    /// Input files or directories, format last: tummler img.png jpg
     #[arg(value_name = "INPUT|FORMAT")]
     pub inputs: Vec<PathBuf>,
 
-    /// Целевой формат (jpeg, webp, mp4, pdf, …)
+    /// Target format (jpeg, webp, mp4, pdf, …)
     #[arg(short = 'f', long = "format", value_name = "EXT")]
     pub format: Option<String>,
 
-    /// Выходной файл или директория. «-» = stdout
+    /// Output file or directory. "-" = stdout
     #[arg(short = 'o', long = "output", value_name = "PATH")]
     pub output: Option<PathBuf>,
 
-    /// Качество lossy-форматов 1–100
+    /// Quality for lossy formats 1–100
     #[arg(short = 'q', long = "quality", value_name = "1-100", value_parser = clap::value_parser!(u8).range(1..=100))]
     pub quality: Option<u8>,
 
-    /// Перезаписать существующие файлы
+    /// Overwrite existing files
     #[arg(long = "overwrite", visible_alias = "force")]
     pub overwrite: bool,
 
-    /// Рекурсивный обход директорий
+    /// Recurse into directories
     #[arg(short = 'r', long = "recursive")]
     pub recursive: bool,
 
-    /// Подробный лог на stderr
+    /// Verbose log on stderr
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
     pub verbose: bool,
 
-    /// Только ошибки (для скриптов)
+    /// Errors only (for scripts)
     #[arg(long = "quiet", conflicts_with = "verbose")]
     pub quiet: bool,
 
-    /// Показать план, ничего не писать
+    /// Print the plan, write nothing
     #[arg(short = 'n', long = "dry-run")]
     pub dry_run: bool,
 
-    /// Параллельные задачи (0 = число CPU)
+    /// Parallel jobs (0 = number of CPUs)
     #[arg(short = 'j', long = "jobs", value_name = "N", default_value_t = 0)]
     pub jobs: usize,
 
-    /// Когда красить вывод: auto, always, never
+    /// When to color output: auto, always, never
     #[arg(long = "color", value_name = "WHEN", value_enum, num_args = 0..=1, default_value_t = ColorWhen::Auto, default_missing_value = "always")]
     pub color: ColorWhen,
 
-    /// То же, что --color never
+    /// Same as --color never
     #[arg(long = "no-color")]
     pub no_color: bool,
 
-    /// Список поддерживаемых форматов
+    /// List supported formats
     #[arg(long = "list-formats")]
     pub list_formats: bool,
 
-    /// Проверить внешние зависимости
+    /// Check external dependencies
     #[arg(long = "check-deps")]
     pub check_deps: bool,
 
-    /// Не предлагать автоустановку зависимостей
+    /// Do not offer to auto-install dependencies
     #[arg(long = "no-auto-install")]
     pub no_auto_install: bool,
 
-    /// Ставить зависимости без вопроса (для скриптов)
+    /// Install dependencies without prompting (for scripts)
     #[arg(short = 'y', long = "yes", conflicts_with = "no_auto_install")]
     pub yes: bool,
 
-    /// Дополнительные аргументы ffmpeg
+    /// Extra ffmpeg arguments
     #[arg(long = "ffmpeg-args", value_name = "ARGS")]
     pub ffmpeg_args: Option<String>,
 
-    /// Скрипт автодополнения оболочки
+    /// Shell completion script
     #[arg(long = "completions", value_name = "SHELL", value_enum)]
     pub completions: Option<ShellKind>,
 }

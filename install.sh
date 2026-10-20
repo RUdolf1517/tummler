@@ -1,5 +1,5 @@
 #!/bin/sh
-# tummler — установка одной командой:
+# tummler — one-command install:
 #   curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
 set -eu
 
@@ -16,12 +16,12 @@ arch=$(uname -m)
 case "$os" in
   Linux)  triple_os=unknown-linux-gnu ;;
   Darwin) triple_os=apple-darwin ;;
-  *) err "неподдерживаемая ОС: $os (нужны Linux или macOS)" ;;
+  *) err "unsupported OS: $os (need Linux or macOS)" ;;
 esac
 case "$arch" in
   x86_64|amd64)  triple_arch=x86_64 ;;
   arm64|aarch64) triple_arch=aarch64 ;;
-  *) err "неподдерживаемая архитектура: $arch" ;;
+  *) err "unsupported architecture: $arch" ;;
 esac
 
 asset="tummler-${triple_arch}-${triple_os}.tar.gz"
@@ -40,7 +40,7 @@ download() {
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-# 1) Готовый бинарник с GitHub Releases
+# 1) Prebuilt binary from GitHub Releases
 url="https://github.com/${REPO}/releases/latest/download/${asset}"
 if download "$url" "$tmp/$asset" 2>/dev/null; then
   tar -C "$tmp" -xzf "$tmp/$asset"
@@ -48,22 +48,22 @@ if download "$url" "$tmp/$asset" 2>/dev/null; then
   if [ -n "$bin" ] && [ -f "$bin" ]; then
     chmod +x "$bin"
     mv "$bin" "$INSTALL_DIR/tummler"
-    say "установлен $INSTALL_DIR/tummler"
+    say "installed $INSTALL_DIR/tummler"
     case ":$PATH:" in
       *":$INSTALL_DIR:"*) ;;
-      *) say "добавьте в PATH: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
+      *) say "add to PATH: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
     esac
     "$INSTALL_DIR/tummler" --version || true
     exit 0
   fi
 fi
 
-# 2) Сборка из git через cargo
+# 2) Build from git via cargo
 if need cargo; then
-  say "релиз не найден — собираю из исходников (cargo)…"
+  say "no release binary found — building from source (cargo)…"
   cargo install --git "https://github.com/${REPO}" --branch "$BRANCH" --force
   exit 0
 fi
 
-err "нужен cargo (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh)
-или GitHub Release: https://github.com/${REPO}/releases"
+err "need cargo (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh)
+or a GitHub Release: https://github.com/${REPO}/releases"

@@ -1,41 +1,41 @@
 # tummler 🌀
 
-Универсальный конвертер файлов — один CLI для всего. Картинки, аудио/видео, документы и архивы.
+A universal file converter — one CLI for images, audio/video, documents, and archives.
 
 ```bash
 tummler photo.png jpg                # photo.png → photo.jpg
-tummler photo.png jpeg -q 80         # → photo.jpeg, с качеством
-tummler video.mp4 gif                # через ffmpeg
-tummler doc.docx pdf                 # через pandoc
-tummler archive.zip tar.gz           # перепаковка
-tummler ./photos webp -r -o ./out    # батч + рекурсия
-tummler a.png b.jpg avif -o ./out    # несколько файлов
+tummler photo.png jpeg -q 80         # → photo.jpeg, with quality
+tummler video.mp4 gif                # via ffmpeg
+tummler doc.docx pdf                 # via pandoc
+tummler archive.zip tar.gz           # repack
+tummler ./photos webp -r -o ./out    # batch + recursive
+tummler a.png b.jpg avif -o ./out    # multiple files
 ```
 
-Поддерживает **macOS** и **Linux** (x86_64 и ARM).
+Supports **macOS** and **Linux** (x86_64 and ARM).
 
-## Установка
+## Install
 
-Одной командой:
+One command:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
 ```
 
-Пока релиза нет — из этой ветки:
+Until a release is published, install from this branch:
 
 ```bash
 cargo install --git https://github.com/RUdolf1517/tummler --branch arena/ce98465f-tummler
 ```
 
-Требуется Rust 1.74+ (для сборки из исходников). Скрипт ставит бинарник в `~/.local/bin`.
+Building from source needs Rust 1.74+. The script installs the binary to `~/.local/bin`.
 
-### Готовые бинарники
+### Prebuilt binaries
 
-Скачай последний релиз со страницы [Releases](https://github.com/RUdolf1517/tummler/releases):
+Download the latest release from [Releases](https://github.com/RUdolf1517/tummler/releases):
 
-| Платформа | Файл |
-|-----------|------|
+| Platform | File |
+|----------|------|
 | macOS Apple Silicon | `tummler-aarch64-apple-darwin` |
 | macOS Intel | `tummler-x86_64-apple-darwin` |
 | Linux x86_64 | `tummler-x86_64-unknown-linux-gnu` |
@@ -47,9 +47,9 @@ sudo mv tummler-* /usr/local/bin/tummler
 tummler --help
 ```
 
-### Из исходников
+### From source
 
-На Linux понадобятся заголовки сжатия:
+On Linux you need compression headers:
 
 ```bash
 # Debian/Ubuntu
@@ -63,133 +63,133 @@ cargo build --release
 ./target/release/tummler --help
 ```
 
-## Использование
+## Usage
 
 ```
 tummler [OPTIONS] <INPUT>... [FORMAT]
 
-Аргументы:
-  <INPUT>...                Файлы или директории. «-» = stdin
-  [FORMAT]                  Целевой формат последним: jpg, webp, mp4, pdf, tar.gz…
+Arguments:
+  <INPUT>...                Files or directories. "-" = stdin
+  [FORMAT]                  Target format last: jpg, webp, mp4, pdf, tar.gz…
 
-Опции:
-  -f, --format <EXT>        Формат явно (вместо позиционного)
-  -o, --output <PATH>       Выходной файл или директория. «-» = stdout
-  -q, --quality <1-100>     Качество lossy-форматов
-      --overwrite, --force  Перезаписать существующие файлы
-  -r, --recursive           Рекурсивный обход директорий
-  -j, --jobs <N>            Параллельные задачи (0 = число CPU)
-  -v, --verbose             Подробный лог на stderr
-      --quiet               Только ошибки (для скриптов)
-  -n, --dry-run             Показать план, ничего не писать
+Options:
+  -f, --format <EXT>        Format explicitly (instead of positional)
+  -o, --output <PATH>       Output file or directory. "-" = stdout
+  -q, --quality <1-100>     Quality for lossy formats
+      --overwrite, --force  Overwrite existing files
+  -r, --recursive           Recurse into directories
+  -j, --jobs <N>            Parallel jobs (0 = number of CPUs)
+  -v, --verbose             Verbose log on stderr
+      --quiet               Errors only (for scripts)
+  -n, --dry-run             Print the plan, write nothing
       --color <WHEN>        auto | always | never
-      --no-color            То же, что --color never
-      --list-formats        Список форматов
-      --check-deps          Проверить ffmpeg/pandoc
-      --no-auto-install     Не ставить зависимости
-  -y, --yes                 Ставить зависимости без вопроса
-      --ffmpeg-args <ARGS>  Доп. аргументы ffmpeg
+      --no-color            Same as --color never
+      --list-formats        List formats
+      --check-deps          Check ffmpeg/pandoc
+      --no-auto-install     Do not install dependencies
+  -y, --yes                 Install dependencies without prompting
+      --ffmpeg-args <ARGS>  Extra ffmpeg arguments
       --completions <SHELL> bash | zsh | fish | powershell | elvish
-  -h, --help                Справка
-  -V, --version             Версия
+  -h, --help                Help
+  -V, --version             Version
 ```
 
-Основной синтаксис — формат последним аргументом:
+The main syntax puts the format last:
 
 ```bash
 tummler image.png jpg                    # → image.jpg
 tummler image.png jpeg                   # → image.jpeg
 tummler image.png webp -o out/
-tummler image.png -o image.webp          # формат из расширения -o
-tummler -- -file.png jpeg                # файл, имя которого начинается с -
+tummler image.png -o image.webp          # format from -o extension
+tummler -- -file.png jpeg                # file whose name starts with -
 cat in.png | tummler - jpeg > out.jpeg
 ```
 
-`-f` / `--format` тоже работают: `tummler image.png -f webp`.
+`-f` / `--format` also work: `tummler image.png -f webp`.
 
-### Батч-конвертация
+### Batch conversion
 
 ```bash
-# Несколько файлов в директорию (параллельно)
+# Several files into a directory (in parallel)
 tummler a.png b.jpg c.bmp webp -o ./converted/
 
-# Вся директория
+# Whole directory
 tummler ./photos avif --overwrite
 
-# Рекурсивно, 8 потоков
+# Recursive, 8 threads
 tummler ./photos webp -r -o ./out -j 8
 
-# Dry-run — план на stdout (можно пайпить)
+# Dry-run — plan on stdout (pipeable)
 tummler ./photos jpeg -r -n
 ```
 
-В TTY tummler показывает спиннер на одном файле и прогресс-бар на батче. В пайпах и с `--quiet` анимация выключена.
+On a TTY tummler shows a spinner for a single file and a progress bar for a batch. Pipes and `--quiet` disable animation.
 
-### Качество
+### Quality
 
 ```bash
-tummler photo.png jpeg -q 90    # высокое качество jpeg (дефолт 90)
+tummler photo.png jpeg -q 90    # high-quality jpeg (default 90)
 tummler photo.png webp -q 80
-tummler video.mp4 webm -q 70    # видео (crf)
-tummler video.mp4 mp3 -q 85     # аудио (битрейт 256k)
+tummler video.mp4 webm -q 70    # video (crf)
+tummler video.mp4 mp3 -q 85     # audio (256k bitrate)
 ```
 
-### Перезапись
+### Overwrite
 
 ```bash
-tummler img.png jpeg              # ошибка если img.jpeg уже есть
-tummler img.png jpeg --overwrite  # перезаписать
+tummler img.png jpeg              # error if img.jpeg already exists
+tummler img.png jpeg --overwrite  # overwrite
 ```
 
-## Поддерживаемые форматы
+## Supported formats
 
-| Категория | Форматы | Зависимости |
-|-----------|---------|-------------|
-| 🖼 Картинки | `png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, pnm, tga, dds, hdr, farbfeld, qoi, exr` | нет (чистый Rust) |
-| 🎬 Аудио/Видео | `mp4, avi, mkv, mov, webm, flv, wmv, mpg, 3gp, m4v, ts, mp3, wav, flac, aac, ogg, m4a, opus, wma, aiff` | `ffmpeg` |
-| 📄 Документы | `pdf, docx, odt, html, md, tex, rst, epub, pptx, csv, json, txt, rtf` | `pandoc` (+ LaTeX для PDF) |
-| 📦 Архивы | `zip, tar, tar.gz/tgz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst` | нет (чистый Rust) |
+| Category | Formats | Dependencies |
+|----------|---------|--------------|
+| 🖼 Images | `png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, pnm, tga, dds, hdr, farbfeld, qoi, exr` | none (pure Rust) |
+| 🎬 Audio/Video | `mp4, avi, mkv, mov, webm, flv, wmv, mpg, 3gp, m4v, ts, mp3, wav, flac, aac, ogg, m4a, opus, wma, aiff` | `ffmpeg` |
+| 📄 Documents | `pdf, docx, odt, html, md, tex, rst, epub, pptx, csv, json, txt, rtf` | `pandoc` (+ LaTeX for PDF) |
+| 📦 Archives | `zip, tar, tar.gz/tgz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst` | none (pure Rust) |
 
-Посмотреть в терминале:
+List them in the terminal:
 
 ```bash
 tummler --list-formats
 ```
 
-## Зависимости
+## Dependencies
 
-Картинки и архивы работают без внешних программ. Для остального нужен:
+Images and archives need no external programs. Everything else needs:
 
-- **ffmpeg** — аудио/видео (`brew install ffmpeg` / `sudo apt install ffmpeg`)
-- **pandoc** — документы (`brew install pandoc` / `sudo apt install pandoc`)
-  - Для `→ pdf` нужен LaTeX: `brew install --cask mactex` / `sudo apt install texlive-latex-recommended`
+- **ffmpeg** — audio/video (`brew install ffmpeg` / `sudo apt install ffmpeg`)
+- **pandoc** — documents (`brew install pandoc` / `sudo apt install pandoc`)
+  - PDF output needs LaTeX: `brew install --cask mactex` / `sudo apt install texlive-latex-recommended`
 
-### Автоустановка
+### Auto-install
 
-Если зависимость не найдена, tummler предложит установить её автоматически в TTY. В скриптах: `--yes` чтобы поставить, `--no-auto-install` чтобы никогда не ставить.
+If a dependency is missing, tummler offers to install it in a TTY. In scripts: `--yes` to install, `--no-auto-install` to never install.
 
 ```bash
 tummler video.mp4 gif --no-auto-install
 tummler --check-deps
 ```
 
-## Соглашения CLI
+## CLI conventions
 
-Ориентир — POSIX, GNU и [clig.dev](https://clig.dev/):
+Follows POSIX, GNU, and [clig.dev](https://clig.dev/):
 
-| Правило | Как у tummler |
-|---------|----------------|
-| stdout = данные, stderr = сообщения | прогресс и спиннер на stderr, только в TTY |
-| Коды выхода | `0` успех, `1` ошибка конвертации, `2` неверные аргументы |
-| Цвет | `NO_COLOR`, `FORCE_COLOR`, `TERM=dumb`, `--color`, `--no-color` |
-| `--` конец опций | `tummler -- -file.png jpeg` |
-| stdin/stdout | `tummler - jpeg` читает stdin, без `-o` пишет stdout |
-| Короткие флаги | склеиваются: `-rvn` |
-| `--quiet` | только ошибки; `-q` занят качеством |
+| Rule | tummler |
+|------|---------|
+| stdout = data, stderr = messages | progress and spinner on stderr, TTY only |
+| Exit codes | `0` success, `1` conversion error, `2` bad arguments |
+| Color | `NO_COLOR`, `FORCE_COLOR`, `TERM=dumb`, `--color`, `--no-color` |
+| `--` end of options | `tummler -- -file.png jpeg` |
+| stdin/stdout | `tummler - jpeg` reads stdin; without `-o` writes stdout |
+| Short flags | cluster: `-rvn` |
+| `--quiet` | errors only; `-q` is quality |
 
-Ошибки в GNU-стиле: `tummler: файл не найден: foo.png`.
+GNU-style errors: `tummler: file not found: foo.png`.
 
-## Автодополнение
+## Completions
 
 ```bash
 # bash
@@ -203,45 +203,45 @@ tummler --completions zsh > ~/.zfunc/_tummler
 tummler --completions fish > ~/.config/fish/completions/tummler.fish
 ```
 
-## Примеры
+## Examples
 
 ```bash
-# Картинки
+# Images
 tummler screenshot.png jpeg -q 85 -o compressed.jpg
 tummler logo.png ico
 tummler ./wallpapers avif -r -o ./avif -j 8
 
-# Видео/аудио
+# Video/audio
 tummler input.mp4 webm
 tummler input.avi mp4 --ffmpeg-args "-crf 23 -preset fast"
 tummler podcast.wav mp3 -q 90
 tummler video.mp4 gif
 
-# Документы
+# Documents
 tummler report.docx pdf
 tummler README.md html -o site.html
 
-# Архивы
+# Archives
 tummler backup.zip tar.gz
 tummler huge.log gz
 
-# Батч
+# Batch
 tummler . webp -r --overwrite -q 80
 tummler a.png b.jpg c.tiff png -o ./pngs --overwrite
 ```
 
-## Как это работает
+## How it works
 
 ```
-tummler ─┬─ Картинки  →  image crate (нативно)
-         ├─ Архивы    →  zip/tar/flate2/bzip2/xz2/zstd (нативно)
-         ├─ Аудио/Видео → ffmpeg (подпроцесс)
-         └─ Документы →  pandoc (подпроцесс)
+tummler ─┬─ Images      →  image crate (native)
+         ├─ Archives    →  zip/tar/flate2/bzip2/xz2/zstd (native)
+         ├─ Audio/Video →  ffmpeg (subprocess)
+         └─ Documents   →  pandoc (subprocess)
 ```
 
-Батч картинок и архивов идёт параллельно (`-j`). Зависимости ffmpeg/pandoc проверяются один раз до старта пула.
+Image and archive batches run in parallel (`-j`). ffmpeg/pandoc are checked once before the pool starts.
 
-## Разработка
+## Development
 
 ```bash
 cargo run -- photo.png jpg --dry-run
@@ -250,6 +250,6 @@ cargo test
 cargo build --release
 ```
 
-## Лицензия
+## License
 
-MIT — см. [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

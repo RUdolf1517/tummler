@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-/// Нормализация расширения для классификации: lowercase, без точки, алиасы.
+/// Normalize an extension for classification: lowercase, no dot, aliases.
 pub fn normalize_ext(ext: &str) -> String {
     let ext = ext.trim().trim_start_matches('.').to_lowercase();
     match ext.as_str() {
@@ -15,9 +15,9 @@ pub fn normalize_ext(ext: &str) -> String {
     }
 }
 
-/// Расширение для имени выходного файла.
-/// Сохраняем форму, которую указал пользователь: `-f jpeg` → `.jpeg`, не `.jpg`.
-/// Схлопываем только настоящие алиасы (`tgz` → `tar.gz`).
+/// Extension used in the output filename.
+/// Keep the form the user asked for: `-f jpeg` → `.jpeg`, not `.jpg`.
+/// Collapse only true aliases (`tgz` → `tar.gz`).
 pub fn output_extension(ext: &str) -> String {
     let ext = ext.trim().trim_start_matches('.').to_lowercase();
     match ext.as_str() {
@@ -32,12 +32,12 @@ pub fn output_extension(ext: &str) -> String {
     }
 }
 
-/// Unix-фильтр: путь «-» означает stdin/stdout.
+/// Unix filter: path "-" means stdin/stdout.
 pub fn is_stdio(path: &Path) -> bool {
     path.as_os_str() == "-"
 }
 
-/// Расширение по magic bytes (для stdin без имени файла).
+/// Extension from magic bytes (stdin with no filename).
 pub fn sniff_suffix(header: &[u8]) -> &'static str {
     if header.len() >= 8 && header.starts_with(&[0x89, b'P', b'N', b'G']) {
         return ".png";
@@ -86,11 +86,11 @@ pub fn sniff_suffix(header: &[u8]) -> &'static str {
     ""
 }
 
-/// Если последний позиционный аргумент — имя формата (`jpg`, `webp`, `tar.gz`),
-/// забираем его из списка входов.
+/// If the last positional argument is a format name (`jpg`, `webp`, `tar.gz`),
+/// take it out of the input list.
 ///
-/// `tummler img.png jpg` → входы `[img.png]`, формат `jpg`.
-/// `photo.jpg` не считается форматом (это имя файла).
+/// `tummler img.png jpg` → inputs `[img.png]`, format `jpg`.
+/// `photo.jpg` is not treated as a format (it is a filename).
 pub fn take_positional_format(inputs: &mut Vec<PathBuf>) -> Option<String> {
     let last = inputs.last()?;
     if is_stdio(last) {
@@ -115,7 +115,7 @@ pub fn take_positional_format(inputs: &mut Vec<PathBuf>) -> Option<String> {
     Some(token)
 }
 
-/// Расширение как в имени файла (`photo.jpeg` → `jpeg`), для вывода `-o`.
+/// Extension as in the filename (`photo.jpeg` → `jpeg`), for `-o`.
 pub fn requested_ext_from_path(path: &Path) -> Option<String> {
     if is_stdio(path) {
         return None;
@@ -131,7 +131,7 @@ pub fn requested_ext_from_path(path: &Path) -> Option<String> {
         .map(|s| s.to_lowercase())
 }
 
-/// Получить расширение файла (нормализованное для классификации).
+/// File extension (normalized for classification).
 pub fn get_extension(path: &Path) -> Option<String> {
     let file_name = path.file_name()?.to_string_lossy().to_lowercase();
     for double in &["tar.gz", "tar.bz2", "tar.xz", "tar.zst"] {
@@ -144,7 +144,7 @@ pub fn get_extension(path: &Path) -> Option<String> {
         .map(normalize_ext)
 }
 
-/// Временный путь рядом с финальным, с тем же расширением
+/// Staging path next to the final file, with the same extension
 /// (`photo.jpeg` → `.tummler-tmp-photo.jpeg`).
 pub fn staging_path(output: &Path) -> PathBuf {
     let parent = output
@@ -158,13 +158,13 @@ pub fn staging_path(output: &Path) -> PathBuf {
     parent.join(format!(".tummler-tmp-{name}"))
 }
 
-/// Группы форматов
+/// Format groups
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FormatKind {
     Image,
-    Media,    // аудио/видео через ffmpeg
-    Document, // через pandoc
-    Archive,  // нативно
+    Media,    // audio/video via ffmpeg
+    Document, // via pandoc
+    Archive,  // native
     Unknown,
 }
 
@@ -195,11 +195,11 @@ pub fn is_supported_output(ext: &str) -> bool {
     classify_ext(ext) != FormatKind::Unknown
 }
 
-/// Вычислить выходной путь.
+/// Resolve the output path.
 ///
-/// - `-o` существующая директория / путь с `/` на конце / несколько входов → директория
-/// - `-o` файл при одном входе → конкретный файл
-/// - без `-o` → рядом с исходником, то же имя + новое расширение
+/// - `-o` existing directory / path ending with `/` / multiple inputs → directory
+/// - `-o` file with a single input → that file
+/// - no `-o` → next to the source, same stem + new extension
 pub fn resolve_output_path(
     input: &Path,
     target_ext: &str,
@@ -274,7 +274,7 @@ fn strip_double_ext_stem(path: &Path) -> Option<String> {
     None
 }
 
-/// Собрать список файлов для конвертации из inputs.
+/// Collect files to convert from inputs.
 pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for input in inputs {
@@ -306,10 +306,10 @@ pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
 
 pub fn print_supported_formats() {
     use colored::Colorize;
-    println!("{}", "Поддерживаемые форматы tummler:".bold());
+    println!("{}", "Supported tummler formats:".bold());
     println!();
 
-    println!("  {} {}", "🖼  Картинки".bold(), "(нативно, без зависимостей)".dimmed());
+    println!("  {} {}", "🖼  Images".bold(), "(native, no dependencies)".dimmed());
     println!(
         "     {}",
         "png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, pnm, tga, dds, hdr, farbfeld, qoi, exr"
@@ -317,10 +317,10 @@ pub fn print_supported_formats() {
     );
     println!();
 
-    println!("  {} {}", "🎬  Аудио/Видео".bold(), "(требует ffmpeg)".dimmed());
+    println!("  {} {}", "🎬  Audio/Video".bold(), "(requires ffmpeg)".dimmed());
     println!(
         "     {}",
-        "mp4, avi, mkv, mov, webm, flv, wmv, mpg, 3gp, m4v, ts, gif (из видео)".cyan()
+        "mp4, avi, mkv, mov, webm, flv, wmv, mpg, 3gp, m4v, ts, gif (from video)".cyan()
     );
     println!(
         "     {}",
@@ -328,21 +328,21 @@ pub fn print_supported_formats() {
     );
     println!();
 
-    println!("  {} {}", "📄  Документы".bold(), "(требует pandoc)".dimmed());
+    println!("  {} {}", "📄  Documents".bold(), "(requires pandoc)".dimmed());
     println!(
         "     {}",
         "pdf, docx, odt, html, md, tex, rst, epub, pptx, csv, json, txt, rtf".cyan()
     );
     println!();
 
-    println!("  {} {}", "📦  Архивы".bold(), "(нативно)".dimmed());
+    println!("  {} {}", "📦  Archives".bold(), "(native)".dimmed());
     println!(
         "     {}",
         "zip, tar, tar.gz/tgz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst".cyan()
     );
     println!();
 
-    println!("{}", "Примеры:".dimmed());
+    println!("{}", "Examples:".dimmed());
     println!("  {}  {}", "tummler photo.png jpeg".dimmed(), "→ photo.jpeg".dimmed());
     println!("  {}  {}", "tummler video.mp4 webm -q 80".dimmed(), "→ video.webm".dimmed());
     println!("  {}  {}", "tummler doc.docx pdf".dimmed(), "→ doc.pdf".dimmed());
@@ -350,7 +350,7 @@ pub fn print_supported_formats() {
     println!(
         "  {}  {}",
         "tummler ./photos webp -r -o ./out".dimmed(),
-        "→ батч + рекурсия".dimmed()
+        "→ batch + recursive".dimmed()
     );
 }
 

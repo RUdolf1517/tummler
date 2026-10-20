@@ -4,7 +4,7 @@ use crate::util::normalize_ext;
 use std::path::Path;
 use std::process::Command;
 
-/// Конвертация аудио/видео через ffmpeg
+/// Audio/video conversion via ffmpeg
 pub fn convert_media(
     input: &Path,
     output: &Path,
@@ -44,7 +44,7 @@ pub fn convert_media(
             if out_ext != "gif" {
                 let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
                 cmd.arg("-crf").arg(crf.to_string());
-                // -preset есть у libx264/x265; у webm/vp9 его нет и ffmpeg падает
+                // -preset is libx264/x265 only; webm/vp9 does not have it and ffmpeg fails
                 if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
                     cmd.arg("-preset").arg(if q >= 80 { "slow" } else { "medium" });
                 }
@@ -83,7 +83,7 @@ pub fn convert_media(
         let stderr = String::from_utf8_lossy(&output_result.stderr);
         let stdout = String::from_utf8_lossy(&output_result.stdout);
         return Err(TummlerError::MediaError(format!(
-            "ffmpeg завершился с ошибкой (код {:?}):\n{}\n{}",
+            "ffmpeg failed (exit {:?}):\n{}\n{}",
             output_result.status.code(),
             stderr,
             stdout
@@ -126,7 +126,7 @@ mod shell_words {
             }
         }
         if in_single || in_double {
-            return Err("Незакрытая кавычка в --ffmpeg-args".into());
+            return Err("unclosed quote in --ffmpeg-args".into());
         }
         if !current.is_empty() {
             result.push(current);

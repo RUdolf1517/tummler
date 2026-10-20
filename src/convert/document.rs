@@ -3,7 +3,7 @@ use crate::error::TummlerError;
 use std::path::Path;
 use std::process::Command;
 
-/// Конвертация документов через pandoc
+/// Document conversion via pandoc
 pub fn convert_document(
     input: &Path,
     output: &Path,
@@ -32,13 +32,13 @@ pub fn convert_document(
         let hint = if out_ext == "pdf"
             && (stderr.contains("pdflatex") || stderr.contains("xelatex") || stderr.contains("lualatex"))
         {
-            "\nПодсказка: для PDF нужен LaTeX (например: brew install --cask mactex / sudo apt install texlive-latex-recommended texlive-fonts-recommended)"
+            "\nhint: PDF needs LaTeX (e.g. brew install --cask mactex / sudo apt install texlive-latex-recommended texlive-fonts-recommended)"
         } else {
             ""
         };
 
         return Err(TummlerError::DocumentError(format!(
-            "pandoc завершился с ошибкой (код {:?}):\n{}{}{}",
+            "pandoc failed (exit {:?}):\n{}{}{}",
             result.status.code(),
             stderr,
             hint,

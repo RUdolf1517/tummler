@@ -5,7 +5,7 @@ use std::io::{self, IsTerminal};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-/// 0 = успех, 1 = ошибка выполнения, 2 = неверные аргументы (как у GNU).
+/// 0 = success, 1 = conversion error, 2 = invalid arguments (GNU-style).
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_FAIL: i32 = 1;
 pub const EXIT_USAGE: i32 = 2;
@@ -34,7 +34,7 @@ fn env_nonempty(name: &str) -> bool {
     std::env::var_os(name).is_some_and(|v| !v.is_empty())
 }
 
-/// Цвет: `--color` > `--no-color` > NO_COLOR > FORCE_COLOR > TERM=dumb > TTY.
+/// Color: `--color` > `--no-color` > NO_COLOR > FORCE_COLOR > TERM=dumb > TTY.
 pub fn init_color(when: ColorWhen, no_color_flag: bool) {
     let when = if no_color_flag { ColorWhen::Never } else { when };
     match when {
@@ -81,7 +81,7 @@ pub fn usage_exit(msg: impl std::fmt::Display) -> ! {
     std::process::exit(EXIT_USAGE);
 }
 
-/// Спиннер для одной конвертации.
+/// Spinner for a single conversion.
 pub fn spinner(msg: impl Into<String>) -> Option<ProgressBar> {
     if !wants_animation() {
         return None;
@@ -98,7 +98,7 @@ pub fn spinner(msg: impl Into<String>) -> Option<ProgressBar> {
     Some(pb)
 }
 
-/// Прогресс-бар батча со спиннером.
+/// Batch progress bar with a spinner.
 pub fn batch_bar(len: u64) -> Option<ProgressBar> {
     if !wants_animation() {
         return None;

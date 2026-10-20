@@ -2,39 +2,39 @@ use colored::Colorize;
 use std::io::IsTerminal;
 use std::process::Command;
 
-/// Проверка наличия бинарника в PATH
+/// Check whether a binary is on PATH.
 pub fn is_available(bin: &str) -> bool {
     which::which(bin).is_ok()
 }
 
-/// Человекочитаемые подсказки по установке
+/// Human-readable install hints.
 pub fn install_hint(bin: &str) -> String {
     match bin {
         "ffmpeg" => format!(
-            "Установите ffmpeg:\n  {}  brew install ffmpeg\n  {}  sudo apt install ffmpeg\n  {}  sudo dnf install ffmpeg\n  {}  https://ffmpeg.org/download.html",
+            "Install ffmpeg:\n  {}  brew install ffmpeg\n  {}  sudo apt install ffmpeg\n  {}  sudo dnf install ffmpeg\n  {}  https://ffmpeg.org/download.html",
             "macOS:".bold(),
             "Debian/Ubuntu:".bold(),
             "Fedora:".bold(),
-            "Сайт:".bold()
+            "Website:".bold()
         ),
         "ffprobe" => format!(
-            "ffprobe обычно идёт вместе с ffmpeg:\n  {} brew install ffmpeg\n  {} sudo apt install ffmpeg",
+            "ffprobe usually ships with ffmpeg:\n  {} brew install ffmpeg\n  {} sudo apt install ffmpeg",
             "macOS:".bold(),
             "Debian/Ubuntu:".bold()
         ),
         "pandoc" => format!(
-            "Установите pandoc:\n  {}  brew install pandoc\n  {}  sudo apt install pandoc\n  {}  https://pandoc.org/installing.html",
+            "Install pandoc:\n  {}  brew install pandoc\n  {}  sudo apt install pandoc\n  {}  https://pandoc.org/installing.html",
             "macOS:".bold(),
             "Debian/Ubuntu:".bold(),
-            "Сайт:".bold()
+            "Website:".bold()
         ),
-        _ => format!("Установите {bin} через пакетный менеджер вашей системы."),
+        _ => format!("Install {bin} with your system package manager."),
     }
 }
 
-/// Попытка автоустановки (интерактивная, только в TTY)
+/// Interactive auto-install, TTY only.
 pub fn prompt_auto_install(bin: &str, no_auto: bool) -> bool {
-    eprintln!("{} {} не найден в PATH.", "⚠".yellow(), bin.bold());
+    eprintln!("{} {} not found in PATH.", "⚠".yellow(), bin.bold());
     eprintln!("{}", install_hint(bin));
 
     if no_auto {
@@ -44,7 +44,7 @@ pub fn prompt_auto_install(bin: &str, no_auto: bool) -> bool {
     if !std::io::stdin().is_terminal() {
         eprintln!(
             "{}",
-            "Неинтерактивный режим — автоустановка пропущена.".dimmed()
+            "Non-interactive mode — skipping auto-install.".dimmed()
         );
         return false;
     }
@@ -54,7 +54,7 @@ pub fn prompt_auto_install(bin: &str, no_auto: bool) -> bool {
     };
 
     let answer = dialoguer::Confirm::new()
-        .with_prompt(format!("Запустить `{cmd}` для установки {bin}?"))
+        .with_prompt(format!("Run `{cmd}` to install {bin}?"))
         .default(true)
         .interact()
         .unwrap_or(false);
@@ -68,22 +68,22 @@ pub fn prompt_auto_install(bin: &str, no_auto: bool) -> bool {
 
 fn try_install(bin: &str) -> bool {
     let Some(cmd) = detect_install_command(bin) else {
-        eprintln!("{} нет пакетного менеджера для автоустановки {bin}", "tummler:".yellow());
+        eprintln!("{} no package manager available to auto-install {bin}", "tummler:".yellow());
         return false;
     };
     run_install(bin, &cmd)
 }
 
 fn run_install(bin: &str, cmd: &str) -> bool {
-    eprintln!("{} Запускаю: {}", "→".cyan(), cmd.dimmed());
+    eprintln!("{} Running: {}", "→".cyan(), cmd.dimmed());
     match Command::new("sh").arg("-c").arg(cmd).status() {
         Ok(s) if s.success() => {
             if is_available(bin) {
-                eprintln!("{} {} успешно установлен!", "✓".green(), bin.green());
+                eprintln!("{} {} installed", "✓".green(), bin.green());
                 true
             } else {
                 eprintln!(
-                    "{} Установка завершилась, но {} всё ещё не найден. Проверьте PATH.",
+                    "{} install finished but {} is still missing. Check PATH.",
                     "⚠".yellow(),
                     bin
                 );
@@ -91,11 +91,11 @@ fn run_install(bin: &str, cmd: &str) -> bool {
             }
         }
         Ok(s) => {
-            eprintln!("{} Команда завершилась с кодом {:?}", "✗".red(), s.code());
+            eprintln!("{} command exited with code {:?}", "✗".red(), s.code());
             false
         }
         Err(e) => {
-            eprintln!("{} Не удалось запустить установщик: {}", "✗".red(), e);
+            eprintln!("{} failed to run installer: {}", "✗".red(), e);
             false
         }
     }
@@ -146,47 +146,47 @@ fn bin_for_pkg(bin: &str) -> &str {
     }
 }
 
-/// Проверка и автоустановка если нужно
+/// Check and auto-install if needed.
 pub fn ensure_available(bin: &str, no_auto: bool, assume_yes: bool) -> Result<(), String> {
     if is_available(bin) {
         return Ok(());
     }
     if no_auto {
-        eprintln!("{} {} не найден в PATH.", "⚠".yellow(), bin.bold());
+        eprintln!("{} {} not found in PATH.", "⚠".yellow(), bin.bold());
         eprintln!("{}", install_hint(bin));
-        return Err(format!("{} не найден. {}", bin, install_hint(bin)));
+        return Err(format!("{bin} not found. {}", install_hint(bin)));
     }
     if assume_yes {
         if try_install(bin) && is_available(bin) {
             return Ok(());
         }
-        return Err(format!("{} не найден. {}", bin, install_hint(bin)));
+        return Err(format!("{bin} not found. {}", install_hint(bin)));
     }
     if prompt_auto_install(bin, false) && is_available(bin) {
         return Ok(());
     }
-    Err(format!("{} не найден. {}", bin, install_hint(bin)))
+    Err(format!("{bin} not found. {}", install_hint(bin)))
 }
 
-/// Вывести статус всех зависимостей
+/// Print status of all dependencies.
 pub fn check_all() {
-    println!("{}", "Зависимости tummler:".bold());
+    println!("{}", "tummler dependencies:".bold());
     println!();
 
     let deps = [
-        ("ffmpeg", "Аудио/видео конвертация", true),
-        ("ffprobe", "Анализ медиафайлов (опционально)", false),
-        ("pandoc", "Конвертация документов", true),
+        ("ffmpeg", "Audio/video conversion", true),
+        ("ffprobe", "Media inspection (optional)", false),
+        ("pandoc", "Document conversion", true),
     ];
 
     for (bin, desc, required) in deps {
         let available = is_available(bin);
         let status = if available {
-            "✓ установлен".green()
+            "✓ installed".green()
         } else if required {
-            "✗ не найден".red()
+            "✗ not found".red()
         } else {
-            "○ не найден (опционально)".yellow()
+            "○ not found (optional)".yellow()
         };
         println!("  {:12}  {}  — {}", bin.bold(), status, desc);
         if !available {
@@ -200,8 +200,8 @@ pub fn check_all() {
     println!();
     println!(
         "  {} {}",
-        "Нативные (без зависимостей):".bold(),
-        "картинки (image crate), архивы (zip/tar)".dimmed()
+        "Native (no dependencies):".bold(),
+        "images (image crate), archives (zip/tar)".dimmed()
     );
     println!();
 

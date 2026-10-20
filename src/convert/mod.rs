@@ -9,7 +9,7 @@ use crate::util::{classify_ext, get_extension, is_stdio, normalize_ext, staging_
 use colored::Colorize;
 use std::path::Path;
 
-/// Проверить внешние зависимости один раз до параллельного батча.
+/// Check external dependencies once before a parallel batch.
 pub fn prefetch_deps(
     inputs: &[std::path::PathBuf],
     target_ext: &str,
@@ -41,9 +41,9 @@ pub fn prefetch_deps(
     Ok(())
 }
 
-/// Главный диспетчер конвертации.
-/// Пишет во временный файл рядом с целью и атомарно переименовывает,
-/// чтобы при ошибке не затереть уже существующий выход.
+/// Main conversion dispatcher.
+/// Writes to a temp file next to the target and renames atomically
+/// so a failure cannot clobber an existing output.
 pub fn convert_file(
     input: &Path,
     output: &Path,
@@ -80,7 +80,7 @@ pub fn convert_file(
 
     if output.exists() && !overwrite {
         return Err(TummlerError::Other(format!(
-            "Файл уже существует: {} (используйте --overwrite / --force)",
+            "file already exists: {} (use --overwrite / --force)",
             output.display()
         )));
     }
@@ -145,7 +145,7 @@ pub fn convert_file(
             if let Err(e) = std::fs::rename(&staging, output) {
                 std::fs::copy(&staging, output).map_err(|e2| {
                     let _ = std::fs::remove_file(&staging);
-                    TummlerError::IoError(format!("не удалось сохранить {}: {e}; {e2}", output.display()))
+                    TummlerError::IoError(format!("failed to save {}: {e}; {e2}", output.display()))
                 })?;
                 let _ = std::fs::remove_file(&staging);
             }

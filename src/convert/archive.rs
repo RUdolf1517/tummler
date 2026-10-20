@@ -11,18 +11,18 @@ fn is_archive_ext(ext: &str) -> bool {
     )
 }
 
-/// Конвертация архивов (перепаковка) и сжатие обычных файлов.
+/// Archive conversion (repack) and compression of plain files.
 ///
-/// Поддерживает: zip, tar, tar.gz/tgz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst
-/// - Архив → архив: распаковать во временную директорию и запаковать заново
-/// - Обычный файл → gz/zip/tar.*: сжать / упаковать один файл
+/// Supports: zip, tar, tar.gz/tgz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst
+/// - Archive → archive: unpack to a temp dir and pack again
+/// - Plain file → gz/zip/tar.*: compress / pack a single file
 pub fn convert_archive(input: &Path, output: &Path) -> Result<(), TummlerError> {
     let input_ext = normalize_ext(&get_extension(input).unwrap_or_default());
     let output_ext = normalize_ext(&get_extension(output).unwrap_or_default());
 
     if !is_archive_ext(&output_ext) {
         return Err(TummlerError::ArchiveError(format!(
-            "Неподдерживаемый целевой формат архива: {output_ext}"
+            "unsupported target archive format: {output_ext}"
         )));
     }
 
@@ -32,18 +32,18 @@ pub fn convert_archive(input: &Path, output: &Path) -> Result<(), TummlerError> 
 
     if input_ext == output_ext {
         return Err(TummlerError::Other(format!(
-            "Исходный и целевой форматы совпадают: {input_ext}"
+            "source and target formats are the same: {input_ext}"
         )));
     }
 
-    // Временная директория для распаковки
+    // Temp directory for unpacking
     let temp_dir = tempfile::tempdir().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
     let temp_path = temp_dir.path();
 
-    // 1. Распаковать
+    // 1. Unpack
     unpack_archive(input, &input_ext, temp_path)?;
 
-    // 2. Запаковать
+    // 2. Pack
     pack_archive(temp_path, output, &output_ext)?;
 
     Ok(())
@@ -62,7 +62,7 @@ fn unpack_archive(input: &Path, ext: &str, dest: &Path) -> Result<(), TummlerErr
         "xz" => unpack_xz(input, dest),
         "zst" => unpack_zst(input, dest),
         _ => Err(TummlerError::ArchiveError(format!(
-            "Неподдерживаемый исходный формат архива: {ext}"
+            "unsupported source archive format: {ext}"
         ))),
     }
 }
@@ -78,7 +78,7 @@ fn pack_plain_file(input: &Path, output: &Path, ext: &str) -> Result<(), Tummler
             pack_archive(temp_dir.path(), output, ext)
         }
         _ => Err(TummlerError::ArchiveError(format!(
-            "Неподдерживаемый целевой формат архива: {ext}"
+            "unsupported target archive format: {ext}"
         ))),
     }
 }
@@ -113,7 +113,7 @@ fn compress_file(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerEr
         }
         _ => {
             return Err(TummlerError::ArchiveError(format!(
-                "Неподдерживаемый кодек сжатия: {ext}"
+                "unsupported compression codec: {ext}"
             )));
         }
     }
@@ -126,7 +126,7 @@ fn single_file_in(src_dir: &Path, ext: &str) -> Result<PathBuf, TummlerError> {
     let files: Vec<_> = files.into_iter().filter(|p| p.is_file()).collect();
     if files.is_empty() {
         return Err(TummlerError::ArchiveError(format!(
-            "Нет файлов для сжатия в .{ext}"
+            "no files to compress into .{ext}"
         )));
     }
     if files.len() > 1 {
@@ -138,7 +138,7 @@ fn single_file_in(src_dir: &Path, ext: &str) -> Result<PathBuf, TummlerError> {
             other => other,
         };
         return Err(TummlerError::ArchiveError(format!(
-            "Формат .{ext} поддерживает только один файл. Используйте .{hint} для нескольких файлов."
+            "format .{ext} supports a single file. Use .{hint} for multiple files."
         )));
     }
     Ok(files.into_iter().next().unwrap())
@@ -157,7 +157,7 @@ fn pack_archive(src_dir: &Path, output: &Path, ext: &str) -> Result<(), TummlerE
         "xz" => pack_xz(src_dir, output),
         "zst" => pack_zst(src_dir, output),
         _ => Err(TummlerError::ArchiveError(format!(
-            "Неподдерживаемый целевой формат архива: {ext}"
+            "unsupported target archive format: {ext}"
         ))),
     }
 }

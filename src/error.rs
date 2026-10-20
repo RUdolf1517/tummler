@@ -2,31 +2,31 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum TummlerError {
-    #[error("Файл не найден: {0}")]
+    #[error("file not found: {0}")]
     FileNotFound(String),
 
-    #[error("Неподдерживаемый формат: {0}")]
+    #[error("unsupported format: {0}")]
     UnsupportedFormat(String),
 
-    #[error("Неподдерживаемая конвертация: {0} → {1}")]
+    #[error("unsupported conversion: {0} → {1}")]
     UnsupportedConversion(String, String),
 
-    #[error("Внешняя зависимость не найдена: {0}. {1}")]
+    #[error("missing dependency: {0}. {1}")]
     DependencyMissing(String, String),
 
-    #[error("Ошибка конвертации изображения: {0}")]
+    #[error("image conversion failed: {0}")]
     ImageError(String),
 
-    #[error("Ошибка конвертации медиа (ffmpeg): {0}")]
+    #[error("media conversion failed (ffmpeg): {0}")]
     MediaError(String),
 
-    #[error("Ошибка конвертации документа (pandoc): {0}")]
+    #[error("document conversion failed (pandoc): {0}")]
     DocumentError(String),
 
-    #[error("Ошибка конвертации архива: {0}")]
+    #[error("archive conversion failed: {0}")]
     ArchiveError(String),
 
-    #[error("Ошибка ввода-вывода: {0}")]
+    #[error("I/O error: {0}")]
     IoError(String),
 
     #[error("{0}")]

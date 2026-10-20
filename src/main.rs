@@ -55,18 +55,18 @@ fn run(mut cli: cli::Cli) -> i32 {
     }
 
     if cli.inputs.is_empty() {
-        ui::error("укажите входной файл: tummler input.png jpg");
-        ui::info("tummler --help — справка");
+        ui::error("specify an input file: tummler input.png jpg");
+        ui::info("tummler --help for usage");
         return ui::EXIT_USAGE;
     }
 
     let stdin_count = cli.inputs.iter().filter(|p| util::is_stdio(p)).count();
     if stdin_count > 1 {
-        ui::error("stdin («-») можно указать только один раз");
+        ui::error("stdin ('-') may be given only once");
         return ui::EXIT_USAGE;
     }
     if stdin_count == 1 && cli.inputs.len() > 1 {
-        ui::error("stdin («-») нельзя смешивать с другими файлами");
+        ui::error("cannot mix stdin ('-') with other files");
         return ui::EXIT_USAGE;
     }
 
@@ -77,14 +77,14 @@ fn run(mut cli: cli::Cli) -> i32 {
 
     let target_ext = util::output_extension(&format);
     if !util::is_supported_output(&target_ext) {
-        ui::error(format!("неподдерживаемый формат: {target_ext}"));
-        ui::info("tummler --list-formats — доступные форматы");
+        ui::error(format!("unsupported format: {target_ext}"));
+        ui::info("tummler --list-formats for available formats");
         return ui::EXIT_USAGE;
     }
 
     let inputs = util::collect_inputs(&cli.inputs, cli.recursive);
     if inputs.is_empty() {
-        ui::error("нет файлов для конвертации");
+        ui::error("no files to convert");
         return ui::EXIT_FAIL;
     }
 
@@ -96,12 +96,12 @@ fn run(mut cli: cli::Cli) -> i32 {
             continue;
         }
         if !p.exists() {
-            ui::error(format!("файл не найден: {}", p.display()));
+            ui::error(format!("file not found: {}", p.display()));
             failed += 1;
             continue;
         }
         if !p.is_file() {
-            ui::warn(format!("пропуск (не файл): {}", p.display()));
+            ui::warn(format!("skipping (not a file): {}", p.display()));
             failed += 1;
             continue;
         }
@@ -109,7 +109,7 @@ fn run(mut cli: cli::Cli) -> i32 {
     }
 
     if valid_inputs.is_empty() {
-        ui::error("нет валидных файлов");
+        ui::error("no valid files");
         return ui::EXIT_FAIL;
     }
 
@@ -118,7 +118,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         || (valid_inputs.len() == 1 && util::is_stdio(&valid_inputs[0]) && cli.output.is_none());
 
     if stdout_mode && multiple {
-        ui::error("stdout («-») нельзя использовать с несколькими входами");
+        ui::error("stdout ('-') cannot be used with multiple inputs");
         return ui::EXIT_USAGE;
     }
 
@@ -126,7 +126,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         if let Some(ref out) = cli.output {
             if !util::is_stdio(out) && out.exists() && out.is_file() {
                 ui::error(format!(
-                    "для нескольких файлов -o должен быть директорией: {}",
+                    "for multiple files -o must be a directory: {}",
                     out.display()
                 ));
                 return ui::EXIT_USAGE;
@@ -135,7 +135,7 @@ fn run(mut cli: cli::Cli) -> i32 {
     }
 
     if cli.dry_run {
-        ui::info("dry-run, файлы не будут изменены");
+        ui::info("dry-run, files will not be changed");
         for input in &valid_inputs {
             let output = if stdout_mode {
                 PathBuf::from("-")
@@ -178,7 +178,7 @@ fn run(mut cli: cli::Cli) -> i32 {
             };
         if input == &output && !cli.overwrite {
             ui::error(format!(
-                "исходник и выход совпадают: {} (нужен --overwrite для записи на месте)",
+                "source and destination are the same: {} (use --overwrite to replace in place)",
                 input.display()
             ));
             failed += 1;
@@ -243,7 +243,7 @@ fn run(mut cli: cli::Cli) -> i32 {
                 Ok(()) => {
                     success.fetch_add(1, Ordering::Relaxed);
                     if verbose {
-                        ui::info(format!("готово {}", t.label_out));
+                        ui::info(format!("done {}", t.label_out));
                     }
                 }
                 Err(e) => {
@@ -258,7 +258,7 @@ fn run(mut cli: cli::Cli) -> i32 {
 
         if let Some(ref bar) = bar {
             let s = success.load(Ordering::Relaxed);
-            ui::finish_ok(Some(bar), format!("готово {s}/{}", tasks.len()));
+            ui::finish_ok(Some(bar), format!("done {s}/{}", tasks.len()));
         } else if let Some(ref sp) = spin {
             if fail_extra.load(Ordering::Relaxed) == 0 {
                 ui::finish_ok(Some(sp), format!("{} → {}", tasks[0].label_in, tasks[0].label_out));
@@ -309,7 +309,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         });
         if let Some(ref bar) = bar {
             let s = success.load(Ordering::Relaxed);
-            ui::finish_ok(Some(bar), format!("готово {s}/{}", tasks.len()));
+            ui::finish_ok(Some(bar), format!("done {s}/{}", tasks.len()));
         }
     }
 
@@ -317,7 +317,7 @@ fn run(mut cli: cli::Cli) -> i32 {
     let success = success.load(Ordering::Relaxed);
 
     if failed > 0 && !cli.quiet {
-        ui::info(format!("успешно: {success}, ошибок: {failed}"));
+        ui::info(format!("ok: {success}, failed: {failed}"));
     }
 
     if failed > 0 {
@@ -346,7 +346,7 @@ fn run_stdio(
                 p
             }
             Err(e) => {
-                ui::error(format!("не удалось прочитать stdin: {e}"));
+                ui::error(format!("failed to read stdin: {e}"));
                 return ui::EXIT_FAIL;
             }
         }
@@ -367,7 +367,7 @@ fn run_stdio(
                 p
             }
             Err(e) => {
-                ui::error(format!("не удалось создать временный файл: {e}"));
+                ui::error(format!("failed to create temporary file: {e}"));
                 return ui::EXIT_FAIL;
             }
         }
@@ -412,7 +412,7 @@ fn run_stdio(
             if stdout_mode {
                 if let Err(e) = emit_stdout(&output) {
                     ui::finish_clear(spin.as_ref());
-                    ui::error(format!("не удалось записать stdout: {e}"));
+                    ui::error(format!("failed to write stdout: {e}"));
                     return ui::EXIT_FAIL;
                 }
             }
@@ -456,9 +456,9 @@ fn resolve_format(cli: &cli::Cli) -> Result<String, i32> {
             }
         }
     }
-    ui::error("укажите формат: tummler input.png jpg");
-    ui::info("или: tummler input.png -f jpeg");
-    ui::info("или: tummler input.png -o output.webp");
+    ui::error("specify a format: tummler input.png jpg");
+    ui::info("or: tummler input.png -f jpeg");
+    ui::info("or: tummler input.png -o output.webp");
     Err(ui::EXIT_USAGE)
 }
 
