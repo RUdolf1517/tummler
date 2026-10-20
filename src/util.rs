@@ -462,9 +462,7 @@ fn strip_double_ext_stem(path: &Path) -> Option<String> {
 pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for input in inputs {
-        if is_stdio(input) {
-            files.push(input.clone());
-        } else if input.is_file() {
+        if is_stdio(input) || input.is_file() {
             files.push(input.clone());
         } else if input.is_dir() {
             if recursive {
@@ -515,16 +513,14 @@ pub fn print_info() {
     println!();
     println!("{}", "This project was written by AI.".dimmed());
     println!();
-    println!("  {:8}  {}", "author".dimmed(), "RUdolf1517");
+    println!("  {:8}  RUdolf1517", "author".dimmed());
     println!(
-        "  {:8}  {}",
-        "github".dimmed(),
-        "https://github.com/RUdolf1517/tummler"
+        "  {:8}  https://github.com/RUdolf1517/tummler",
+        "github".dimmed()
     );
     println!(
-        "  {:8}  {}",
-        "mail".dimmed(),
-        "rudolfzinovev@protonmail.com"
+        "  {:8}  rudolfzinovev@protonmail.com",
+        "mail".dimmed()
     );
     println!();
 }

@@ -109,7 +109,7 @@ fn detect_install_command(bin: &str) -> Option<String> {
         if which::which("brew").is_ok() {
             return Some(format!("brew install {pkg}"));
         }
-        return None;
+        None
     }
 
     #[cfg(target_os = "linux")]
@@ -129,7 +129,7 @@ fn detect_install_command(bin: &str) -> Option<String> {
         if which::which("zypper").is_ok() {
             return Some(format!("sudo zypper install -y {pkg}"));
         }
-        return None;
+        None
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]

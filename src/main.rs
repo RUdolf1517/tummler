@@ -249,22 +249,23 @@ fn run(mut cli: cli::Cli) -> i32 {
     let bytes_in = AtomicU64::new(0);
     let bytes_out = AtomicU64::new(0);
 
+    let spec = JobSpec {
+        target_ext: &target_ext_owned,
+        quality,
+        overwrite,
+        skip_newer,
+        ffmpeg_args: ffmpeg_args.as_deref(),
+        no_auto,
+        yes,
+        verbose,
+        geometry: &geometry,
+    };
+
     let run_one = |t: &Task| {
         if verbose {
             ui::info(format!("{} → {}", t.label_in, t.label_out));
         }
-        match execute_task(
-            t,
-            &target_ext_owned,
-            quality,
-            overwrite,
-            skip_newer,
-            ffmpeg_args.as_deref(),
-            no_auto,
-            yes,
-            verbose,
-            &geometry,
-        ) {
+        match execute_task(t, &spec) {
             TaskResult::Ok { bin, bout } => {
                 success.fetch_add(1, Ordering::Relaxed);
                 bytes_in.fetch_add(bin, Ordering::Relaxed);
@@ -376,33 +377,34 @@ enum TaskResult {
     Err(String),
 }
 
-fn execute_task(
-    t: &Task,
-    target_ext: &str,
+struct JobSpec<'a> {
+    target_ext: &'a str,
     quality: Option<u8>,
     overwrite: bool,
     skip_newer: bool,
-    ffmpeg_args: Option<&str>,
+    ffmpeg_args: Option<&'a str>,
     no_auto: bool,
     yes: bool,
     verbose: bool,
-    geometry: &Geometry,
-) -> TaskResult {
-    if skip_newer && util::output_up_to_date(&t.input, &t.output) {
+    geometry: &'a Geometry,
+}
+
+fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
+    if spec.skip_newer && util::output_up_to_date(&t.input, &t.output) {
         return TaskResult::Skip;
     }
     let bin = util::file_size(&t.input);
-    let overwrite = overwrite || (skip_newer && t.output.exists());
+    let overwrite = spec.overwrite || (spec.skip_newer && t.output.exists());
     let opts = ConvertOpts {
-        quality,
+        quality: spec.quality,
         overwrite,
-        ffmpeg_args,
-        no_auto_install: no_auto,
-        assume_yes: yes,
-        verbose,
-        geometry,
+        ffmpeg_args: spec.ffmpeg_args,
+        no_auto_install: spec.no_auto,
+        assume_yes: spec.yes,
+        verbose: spec.verbose,
+        geometry: spec.geometry,
     };
-    match convert::convert_file(&t.input, &t.output, target_ext, &opts) {
+    match convert::convert_file(&t.input, &t.output, spec.target_ext, &opts) {
         Ok(()) => TaskResult::Ok {
             bin,
             bout: util::file_size(&t.output),
