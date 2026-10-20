@@ -40,12 +40,14 @@ Format last. That’s the whole trick.
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
 ```
 
-**Homebrew**
+**Homebrew** (no Rust)
 
 ```bash
 brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler
-brew install --HEAD tummler
+brew install tummler
 ```
+
+Intel Mac: `brew install --HEAD tummler` (builds with Rust).
 
 **Cargo** (needs [Rust 1.74+](https://rustup.rs))
 
@@ -55,7 +57,7 @@ cargo install tummler
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
-`curl` / a bottled `brew install` need a [GitHub Release](https://github.com/RUdolf1517/tummler/releases) (`v0.1.0+`). Until then use `cargo` or `brew install --HEAD`. macOS and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY.
+macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY.
 
 <details>
 <summary>From source</summary>
