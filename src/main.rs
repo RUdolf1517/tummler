@@ -3,18 +3,23 @@ mod completions;
 mod convert;
 mod deps;
 mod error;
+mod geom;
+mod interrupt;
 mod ui;
 mod util;
 
 use clap::{CommandFactory, Parser};
+use convert::ConvertOpts;
+use geom::Geometry;
 use rayon::prelude::*;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 fn main() {
     let cli = cli::Cli::parse();
 
+    interrupt::install();
     ui::init_color(cli.color, cli.no_color);
     ui::set_quiet(cli.quiet);
 
@@ -82,9 +87,31 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_USAGE;
     }
 
+    let geometry = match build_geometry(&cli) {
+        Ok(g) => g,
+        Err(msg) => {
+            ui::error(msg);
+            return ui::EXIT_USAGE;
+        }
+    };
+    if !geometry.is_noop() {
+        let kind = util::classify_ext(&target_ext);
+        if !matches!(kind, util::FormatKind::Image | util::FormatKind::Media) {
+            ui::warn("--max/--resize ignored for this format");
+        }
+    }
+
     let inputs = util::collect_inputs(&cli.inputs, cli.recursive);
+    let inputs: Vec<PathBuf> = inputs
+        .into_iter()
+        .filter(|p| util::passes_filters(p, &cli.include, &cli.exclude))
+        .collect();
     if inputs.is_empty() {
-        ui::error("no files to convert");
+        if !cli.include.is_empty() || !cli.exclude.is_empty() {
+            ui::error("no files to convert (filtered by --include/--exclude)");
+        } else {
+            ui::error("no files to convert");
+        }
         return ui::EXIT_FAIL;
     }
 
@@ -149,7 +176,12 @@ fn run(mut cli: cli::Cli) -> i32 {
                     }
                 }
             };
-            println!("{} -> {}", input.display(), output.display());
+            let skip = cli.skip_newer && util::output_up_to_date(input, &output);
+            if skip {
+                println!("{} -> {}  skip", input.display(), output.display());
+            } else {
+                println!("{} -> {}", input.display(), output.display());
+            }
         }
         return ui::EXIT_OK;
     }
@@ -162,7 +194,7 @@ fn run(mut cli: cli::Cli) -> i32 {
 
     let has_stdio = stdout_mode || valid_inputs.iter().any(|p| util::is_stdio(p));
     if has_stdio {
-        return run_stdio(cli, &valid_inputs, &target_ext, stdout_mode, failed);
+        return run_stdio(cli, &valid_inputs, &target_ext, stdout_mode, failed, &geometry);
     }
 
     let mut tasks: Vec<Task> = Vec::with_capacity(valid_inputs.len());
@@ -176,7 +208,7 @@ fn run(mut cli: cli::Cli) -> i32 {
                     continue;
                 }
             };
-        if input == &output && !cli.overwrite {
+        if input == &output && !cli.overwrite && !cli.skip_newer {
             ui::error(format!(
                 "source and destination are the same: {} (use --overwrite to replace in place)",
                 input.display()
@@ -200,6 +232,7 @@ fn run(mut cli: cli::Cli) -> i32 {
     let ffmpeg_args = cli.ffmpeg_args.clone();
     let quality = cli.quality;
     let overwrite = cli.overwrite;
+    let skip_newer = cli.skip_newer;
     let no_auto = cli.no_auto_install;
     let yes = cli.yes;
     let verbose = cli.verbose;
@@ -207,6 +240,46 @@ fn run(mut cli: cli::Cli) -> i32 {
 
     let success = AtomicUsize::new(0);
     let fail_extra = AtomicUsize::new(0);
+    let skipped = AtomicUsize::new(0);
+    let bytes_in = AtomicU64::new(0);
+    let bytes_out = AtomicU64::new(0);
+
+    let run_one = |t: &Task| {
+        if verbose {
+            ui::info(format!("{} → {}", t.label_in, t.label_out));
+        }
+        match execute_task(
+            t,
+            &target_ext_owned,
+            quality,
+            overwrite,
+            skip_newer,
+            ffmpeg_args.as_deref(),
+            no_auto,
+            yes,
+            verbose,
+            &geometry,
+        ) {
+            TaskResult::Ok { bin, bout } => {
+                success.fetch_add(1, Ordering::Relaxed);
+                bytes_in.fetch_add(bin, Ordering::Relaxed);
+                bytes_out.fetch_add(bout, Ordering::Relaxed);
+                if verbose {
+                    ui::info(format!("done {}", t.label_out));
+                }
+            }
+            TaskResult::Skip => {
+                skipped.fetch_add(1, Ordering::Relaxed);
+                if verbose {
+                    ui::info(format!("skip {} (up to date)", t.label_out));
+                }
+            }
+            TaskResult::Err(e) => {
+                ui::error(format!("{}: {e}", t.label_in));
+                fail_extra.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    };
 
     if jobs == 1 {
         let show_bar = multiple && !verbose;
@@ -224,33 +297,10 @@ fn run(mut cli: cli::Cli) -> i32 {
         };
 
         for t in &tasks {
-            if verbose {
-                ui::info(format!("{} → {}", t.label_in, t.label_out));
-            } else if let Some(ref bar) = bar {
+            if let Some(ref bar) = bar {
                 bar.set_message(format!("{} → {}", t.label_in, t.label_out));
             }
-            match convert::convert_file(
-                &t.input,
-                &t.output,
-                &target_ext_owned,
-                quality,
-                overwrite,
-                ffmpeg_args.as_deref(),
-                no_auto,
-                yes,
-                verbose,
-            ) {
-                Ok(()) => {
-                    success.fetch_add(1, Ordering::Relaxed);
-                    if verbose {
-                        ui::info(format!("done {}", t.label_out));
-                    }
-                }
-                Err(e) => {
-                    ui::error(format!("{}: {e}", t.label_in));
-                    fail_extra.fetch_add(1, Ordering::Relaxed);
-                }
-            }
+            run_one(t);
             if let Some(ref bar) = bar {
                 bar.inc(1);
             }
@@ -261,7 +311,10 @@ fn run(mut cli: cli::Cli) -> i32 {
             ui::finish_ok(Some(bar), format!("done {s}/{}", tasks.len()));
         } else if let Some(ref sp) = spin {
             if fail_extra.load(Ordering::Relaxed) == 0 {
-                ui::finish_ok(Some(sp), format!("{} → {}", tasks[0].label_in, tasks[0].label_out));
+                ui::finish_ok(
+                    Some(sp),
+                    format!("{} → {}", tasks[0].label_in, tasks[0].label_out),
+                );
             } else {
                 ui::finish_clear(Some(sp));
             }
@@ -278,30 +331,10 @@ fn run(mut cli: cli::Cli) -> i32 {
             .expect("thread pool");
         pool.install(|| {
             tasks.par_iter().for_each(|t| {
-                if verbose {
-                    ui::info(format!("{} → {}", t.label_in, t.label_out));
-                } else if let Some(ref bar) = bar {
+                if let Some(ref bar) = bar {
                     bar.set_message(format!("{} → {}", t.label_in, t.label_out));
                 }
-                match convert::convert_file(
-                    &t.input,
-                    &t.output,
-                    &target_ext_owned,
-                    quality,
-                    overwrite,
-                    ffmpeg_args.as_deref(),
-                    no_auto,
-                    yes,
-                    verbose,
-                ) {
-                    Ok(()) => {
-                        success.fetch_add(1, Ordering::Relaxed);
-                    }
-                    Err(e) => {
-                        ui::error(format!("{}: {e}", t.label_in));
-                        fail_extra.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
+                run_one(t);
                 if let Some(ref bar) = bar {
                     bar.inc(1);
                 }
@@ -315,9 +348,14 @@ fn run(mut cli: cli::Cli) -> i32 {
 
     failed += fail_extra.load(Ordering::Relaxed);
     let success = success.load(Ordering::Relaxed);
+    let skipped = skipped.load(Ordering::Relaxed);
+    let bytes_in = bytes_in.load(Ordering::Relaxed);
+    let bytes_out = bytes_out.load(Ordering::Relaxed);
 
-    if failed > 0 && !cli.quiet {
-        ui::info(format!("ok: {success}, failed: {failed}"));
+    if !cli.quiet {
+        ui::info(util::format_summary(
+            success, skipped, failed, bytes_in, bytes_out,
+        ));
     }
 
     if failed > 0 {
@@ -327,12 +365,65 @@ fn run(mut cli: cli::Cli) -> i32 {
     }
 }
 
+enum TaskResult {
+    Ok { bin: u64, bout: u64 },
+    Skip,
+    Err(String),
+}
+
+fn execute_task(
+    t: &Task,
+    target_ext: &str,
+    quality: Option<u8>,
+    overwrite: bool,
+    skip_newer: bool,
+    ffmpeg_args: Option<&str>,
+    no_auto: bool,
+    yes: bool,
+    verbose: bool,
+    geometry: &Geometry,
+) -> TaskResult {
+    if skip_newer && util::output_up_to_date(&t.input, &t.output) {
+        return TaskResult::Skip;
+    }
+    let bin = util::file_size(&t.input);
+    let overwrite = overwrite || (skip_newer && t.output.exists());
+    let opts = ConvertOpts {
+        quality,
+        overwrite,
+        ffmpeg_args,
+        no_auto_install: no_auto,
+        assume_yes: yes,
+        verbose,
+        geometry,
+    };
+    match convert::convert_file(&t.input, &t.output, target_ext, &opts) {
+        Ok(()) => TaskResult::Ok {
+            bin,
+            bout: util::file_size(&t.output),
+        },
+        Err(e) => TaskResult::Err(e.to_string()),
+    }
+}
+
+fn build_geometry(cli: &cli::Cli) -> Result<Geometry, String> {
+    let resize = match cli.resize.as_deref() {
+        Some(s) => Some(geom::parse_resize(s)?),
+        None => None,
+    };
+    Ok(Geometry {
+        max: cli.max,
+        resize,
+    })
+}
+
 fn run_stdio(
     cli: cli::Cli,
     valid_inputs: &[PathBuf],
     target_ext: &str,
     stdout_mode: bool,
     mut failed: usize,
+    geometry: &Geometry,
 ) -> i32 {
     let mut success = 0;
     let input = &valid_inputs[0];
@@ -381,6 +472,11 @@ fn run_stdio(
         }
     };
 
+    if cli.skip_newer && !stdout_mode && util::output_up_to_date(&input_path, &output) {
+        ui::info(format!("skip {} (up to date)", output.display()));
+        return ui::EXIT_OK;
+    }
+
     let label_out = if stdout_mode {
         "-".to_string()
     } else {
@@ -397,17 +493,18 @@ fn run_stdio(
         ui::info(format!("{label_in} → {label_out}"));
     }
 
-    match convert::convert_file(
-        &input_path,
-        &output,
-        target_ext,
-        cli.quality,
-        cli.overwrite || stdout_mode,
-        cli.ffmpeg_args.as_deref(),
-        cli.no_auto_install,
-        cli.yes,
-        cli.verbose,
-    ) {
+    let bin = util::file_size(&input_path);
+    let opts = ConvertOpts {
+        quality: cli.quality,
+        overwrite: cli.overwrite || stdout_mode || (cli.skip_newer && output.exists()),
+        ffmpeg_args: cli.ffmpeg_args.as_deref(),
+        no_auto_install: cli.no_auto_install,
+        assume_yes: cli.yes,
+        verbose: cli.verbose,
+        geometry,
+    };
+
+    match convert::convert_file(&input_path, &output, target_ext, &opts) {
         Ok(()) => {
             if stdout_mode {
                 if let Err(e) = emit_stdout(&output) {
@@ -418,6 +515,10 @@ fn run_stdio(
             }
             success += 1;
             ui::finish_ok(spin.as_ref(), format!("{label_in} → {label_out}"));
+            if !cli.quiet {
+                let bout = util::file_size(&output);
+                ui::info(util::format_summary(success, 0, failed, bin, bout));
+            }
         }
         Err(e) => {
             ui::finish_clear(spin.as_ref());
@@ -429,7 +530,6 @@ fn run_stdio(
     if failed > 0 {
         ui::EXIT_FAIL
     } else {
-        let _ = success;
         ui::EXIT_OK
     }
 }

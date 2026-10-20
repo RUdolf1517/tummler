@@ -11,11 +11,14 @@ Examples:
   tummler photo.png -o photo.webp
   cat in.png | tummler - jpeg > out.jpeg
   tummler -- -file.png jpeg
+  tummler ./photos webp -r --include '*.png' --skip-newer
+  tummler photo.heic jpg --max 1920
 
 Exit codes:
   0  success
   1  conversion error
   2  invalid arguments
+  130 interrupted (Ctrl-C)
 
 The last argument is the format if it is a known extension.
 `--` separates files whose names start with `-`.
@@ -61,6 +64,26 @@ pub struct Cli {
     /// Recurse into directories
     #[arg(short = 'r', long = "recursive")]
     pub recursive: bool,
+
+    /// Include only files matching GLOB (repeatable). Matches name or path.
+    #[arg(long = "include", value_name = "GLOB", action = clap::ArgAction::Append)]
+    pub include: Vec<String>,
+
+    /// Exclude files matching GLOB (repeatable)
+    #[arg(long = "exclude", value_name = "GLOB", action = clap::ArgAction::Append)]
+    pub exclude: Vec<String>,
+
+    /// Skip if the output exists and is newer than (or as new as) the input
+    #[arg(long = "skip-newer")]
+    pub skip_newer: bool,
+
+    /// Longest side in pixels (images/video; keep aspect, never upscale)
+    #[arg(long = "max", value_name = "PX", value_parser = clap::value_parser!(u32).range(1..))]
+    pub max: Option<u32>,
+
+    /// Resize: 50%, 800x, x600, 800x600 (images/video; keep aspect)
+    #[arg(long = "resize", value_name = "SPEC")]
+    pub resize: Option<String>,
 
     /// Verbose log on stderr
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]

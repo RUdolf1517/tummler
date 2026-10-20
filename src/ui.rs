@@ -9,6 +9,7 @@ use std::time::Duration;
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_FAIL: i32 = 1;
 pub const EXIT_USAGE: i32 = 2;
+pub const EXIT_SIGINT: i32 = 130;
 
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "✔"];
 

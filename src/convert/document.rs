@@ -1,5 +1,6 @@
 use crate::deps;
 use crate::error::TummlerError;
+use crate::interrupt;
 use std::path::Path;
 use std::process::Command;
 
@@ -16,8 +17,7 @@ pub fn convert_document(
     let mut cmd = Command::new("pandoc");
     cmd.arg(input).arg("-o").arg(output);
 
-    let result = cmd
-        .output()
+    let result = interrupt::run(&mut cmd)
         .map_err(|e| TummlerError::DocumentError(e.to_string()))?;
 
     if !result.status.success() {

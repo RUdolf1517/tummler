@@ -10,6 +10,7 @@ tummler doc.docx pdf                 # via pandoc
 tummler archive.zip tar.gz           # repack
 tummler ./photos webp -r -o ./out    # batch + recursive
 tummler a.png b.jpg avif -o ./out    # multiple files
+tummler photo.heic jpg --max 1920    # iPhone photo, longest side 1920
 ```
 
 Supports **macOS** and **Linux** (x86_64 and ARM).
@@ -78,6 +79,11 @@ Options:
   -q, --quality <1-100>     Quality for lossy formats
       --overwrite, --force  Overwrite existing files
   -r, --recursive           Recurse into directories
+      --include <GLOB>      Include only matching files (repeatable)
+      --exclude <GLOB>      Skip matching files (repeatable)
+      --skip-newer          Skip if output exists and is up to date
+      --max <PX>            Longest side (images/video, no upscale)
+      --resize <SPEC>       50%, 800x, x600, 800x600
   -j, --jobs <N>            Parallel jobs (0 = number of CPUs)
   -v, --verbose             Verbose log on stderr
       --quiet               Errors only (for scripts)
@@ -121,9 +127,12 @@ tummler ./photos webp -r -o ./out -j 8
 
 # Dry-run — plan on stdout (pipeable)
 tummler ./photos jpeg -r -n
+
+# Only PNGs, skip work that's already done
+tummler ./photos webp -r --include '*.png' --exclude '*_raw*' --skip-newer -o ./out
 ```
 
-On a TTY tummler shows a spinner for a single file and a progress bar for a batch. Pipes and `--quiet` disable animation.
+On a TTY tummler shows a spinner for a single file and a progress bar for a batch. Pipes and `--quiet` disable animation. After a batch it prints a size summary: `12 files, 48 MB → 11 MB (-77%)`.
 
 ### Quality
 
@@ -134,18 +143,28 @@ tummler video.mp4 webm -q 70    # video (crf)
 tummler video.mp4 mp3 -q 85     # audio (256k bitrate)
 ```
 
+### Resize
+
+```bash
+tummler photo.png jpg --max 1920     # longest side ≤ 1920, never upscale
+tummler photo.png webp --resize 50%
+tummler photo.png jpg --resize 800x  # width 800, height proportional
+tummler video.mp4 gif --max 480
+```
+
 ### Overwrite
 
 ```bash
 tummler img.png jpeg              # error if img.jpeg already exists
 tummler img.png jpeg --overwrite  # overwrite
+tummler ./photos webp -r --skip-newer   # folders: skip up-to-date outputs
 ```
 
 ## Supported formats
 
 | Category | Formats | Dependencies |
 |----------|---------|--------------|
-| 🖼 Images | `png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, pnm, tga, dds, hdr, farbfeld, qoi, exr` | none (pure Rust) |
+| 🖼 Images | `png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, heic/heif, pnm, tga, dds, hdr, farbfeld, qoi, exr` | none (pure Rust); HEIC via `ffmpeg` |
 | 🎬 Audio/Video | `mp4, avi, mkv, mov, webm, flv, wmv, mpg, 3gp, m4v, ts, mp3, wav, flac, aac, ogg, m4a, opus, wma, aiff` | `ffmpeg` |
 | 📄 Documents | `pdf, docx, odt, html, md, tex, rst, epub, pptx, csv, json, txt, rtf` | `pandoc` (+ LaTeX for PDF) |
 | 📦 Archives | `zip, tar, tar.gz/tgz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst` | none (pure Rust) |
@@ -180,7 +199,7 @@ Follows POSIX, GNU, and [clig.dev](https://clig.dev/):
 | Rule | tummler |
 |------|---------|
 | stdout = data, stderr = messages | progress and spinner on stderr, TTY only |
-| Exit codes | `0` success, `1` conversion error, `2` bad arguments |
+| Exit codes | `0` success, `1` conversion error, `2` bad arguments, `130` Ctrl-C |
 | Color | `NO_COLOR`, `FORCE_COLOR`, `TERM=dumb`, `--color`, `--no-color` |
 | `--` end of options | `tummler -- -file.png jpeg` |
 | stdin/stdout | `tummler - jpeg` reads stdin; without `-o` writes stdout |
@@ -209,7 +228,8 @@ tummler --completions fish > ~/.config/fish/completions/tummler.fish
 # Images
 tummler screenshot.png jpeg -q 85 -o compressed.jpg
 tummler logo.png ico
-tummler ./wallpapers avif -r -o ./avif -j 8
+tummler photo.heic jpg --max 1920
+tummler ./wallpapers avif -r -o ./avif -j 8 --skip-newer
 
 # Video/audio
 tummler input.mp4 webm

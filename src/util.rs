@@ -37,6 +37,178 @@ pub fn is_stdio(path: &Path) -> bool {
     path.as_os_str() == "-"
 }
 
+/// Glob match (`*`, `?`, `**`), case-insensitive. `*` does not cross `/`.
+pub fn glob_match(pattern: &str, text: &str) -> bool {
+    let p = pattern.replace('\\', "/").to_lowercase();
+    let t = text.replace('\\', "/").to_lowercase();
+    glob_match_bytes(p.as_bytes(), t.as_bytes())
+}
+
+fn glob_match_bytes(pat: &[u8], text: &[u8]) -> bool {
+    if pat.starts_with(b"**") {
+        let rest = if pat.len() > 2 && pat[2] == b'/' {
+            &pat[3..]
+        } else {
+            &pat[2..]
+        };
+        if rest.is_empty() {
+            return true;
+        }
+        if glob_match_bytes(rest, text) {
+            return true;
+        }
+        for i in 0..text.len() {
+            if glob_match_bytes(rest, &text[i + 1..]) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if pat.is_empty() {
+        return text.is_empty();
+    }
+    match pat[0] {
+        b'*' => {
+            if glob_match_bytes(&pat[1..], text) {
+                return true;
+            }
+            if !text.is_empty() && text[0] != b'/' {
+                return glob_match_bytes(pat, &text[1..]);
+            }
+            false
+        }
+        b'?' => {
+            if text.is_empty() || text[0] == b'/' {
+                false
+            } else {
+                glob_match_bytes(&pat[1..], &text[1..])
+            }
+        }
+        c => text.first() == Some(&c) && glob_match_bytes(&pat[1..], &text[1..]),
+    }
+}
+
+/// Match GLOB against the file name or the full path.
+pub fn path_matches_glob(path: &Path, pattern: &str) -> bool {
+    let pat = pattern.trim();
+    if pat.is_empty() {
+        return false;
+    }
+    let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let full = path.to_string_lossy().replace('\\', "/");
+    glob_match(pat, name) || glob_match(pat, &full)
+}
+
+pub fn passes_filters(path: &Path, include: &[String], exclude: &[String]) -> bool {
+    if is_stdio(path) {
+        return true;
+    }
+    if !include.is_empty() && !include.iter().any(|g| path_matches_glob(path, g)) {
+        return false;
+    }
+    if exclude.iter().any(|g| path_matches_glob(path, g)) {
+        return false;
+    }
+    true
+}
+
+pub fn is_staging_name(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .is_some_and(|n| n.starts_with(".tummler-tmp-"))
+}
+
+pub fn output_up_to_date(input: &Path, output: &Path) -> bool {
+    let Ok(out_m) = output.metadata() else {
+        return false;
+    };
+    let Ok(in_m) = input.metadata() else {
+        return false;
+    };
+    let Ok(out_t) = out_m.modified() else {
+        return false;
+    };
+    let Ok(in_t) = in_m.modified() else {
+        return false;
+    };
+    out_t >= in_t
+}
+
+pub fn file_size(path: &Path) -> u64 {
+    path.metadata().map(|m| m.len()).unwrap_or(0)
+}
+
+pub fn human_bytes(n: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut v = n as f64;
+    let mut i = 0;
+    while v >= 1024.0 && i < UNITS.len() - 1 {
+        v /= 1024.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{n} B")
+    } else if v >= 10.0 {
+        format!("{v:.0} {}", UNITS[i])
+    } else {
+        format!("{v:.1} {}", UNITS[i])
+    }
+}
+
+pub fn format_summary(
+    ok: usize,
+    skipped: usize,
+    failed: usize,
+    bytes_in: u64,
+    bytes_out: u64,
+) -> String {
+    if ok == 0 {
+        let mut parts = Vec::new();
+        if skipped > 0 {
+            parts.push(format!(
+                "{} skipped",
+                skipped
+            ));
+        }
+        if failed > 0 {
+            parts.push(format!("{failed} failed"));
+        }
+        if parts.is_empty() {
+            return "nothing to do".into();
+        }
+        return parts.join(", ");
+    }
+    let mut parts = vec![if ok == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{ok} files")
+    }];
+    if skipped > 0 {
+        parts.push(format!("{skipped} skipped"));
+    }
+    if failed > 0 {
+        parts.push(format!("{failed} failed"));
+    }
+    let mut s = parts.join(", ");
+    if bytes_in > 0 {
+        let delta = if bytes_out < bytes_in {
+            let pct = (1.0 - bytes_out as f64 / bytes_in as f64) * 100.0;
+            format!(" (-{pct:.0}%)")
+        } else if bytes_out > bytes_in {
+            let pct = (bytes_out as f64 / bytes_in as f64 - 1.0) * 100.0;
+            format!(" (+{pct:.0}%)")
+        } else {
+            " (0%)".into()
+        };
+        s.push_str(&format!(
+            ", {} → {}{delta}",
+            human_bytes(bytes_in),
+            human_bytes(bytes_out)
+        ));
+    }
+    s
+}
+
 /// Extension from magic bytes (stdin with no filename).
 pub fn sniff_suffix(header: &[u8]) -> &'static str {
     if header.len() >= 8 && header.starts_with(&[0x89, b'P', b'N', b'G']) {
@@ -68,7 +240,14 @@ pub fn sniff_suffix(header: &[u8]) -> &'static str {
     if header.len() >= 2 && header[0] == 0x1f && header[1] == 0x8b {
         return ".gz";
     }
-    if header.len() >= 8 && &header[4..8] == b"ftyp" {
+    if header.len() >= 12 && &header[4..8] == b"ftyp" {
+        let brand = &header[8..12];
+        if matches!(
+            brand,
+            b"heic" | b"heif" | b"mif1" | b"msf1" | b"heix" | b"hevc"
+        ) {
+            return ".heic";
+        }
         return ".mp4";
     }
     if header.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
@@ -173,7 +352,8 @@ pub fn classify_ext(ext: &str) -> FormatKind {
     match ext.as_str() {
         "png" | "jpg" | "jpeg" | "gif" | "bmp" | "ico" | "tiff" | "tif"
         | "webp" | "avif" | "pnm" | "pbm" | "pgm" | "ppm" | "tga" | "dds"
-        | "hdr" | "farbfeld" | "ff" | "qoi" | "exr" | "openexr" => FormatKind::Image,
+        | "hdr" | "farbfeld" | "ff" | "qoi" | "exr" | "openexr"
+        | "heic" | "heif" => FormatKind::Image,
 
         "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg"
         | "3gp" | "m4v" | "ts" | "mts" | "m2ts" | "mxf" | "asf" | "rm" | "rmvb"
@@ -193,6 +373,10 @@ pub fn classify_ext(ext: &str) -> FormatKind {
 
 pub fn is_supported_output(ext: &str) -> bool {
     classify_ext(ext) != FormatKind::Unknown
+}
+
+pub fn is_heif(ext: &str) -> bool {
+    matches!(normalize_ext(ext).as_str(), "heic" | "heif")
 }
 
 /// Resolve the output path.
@@ -286,13 +470,16 @@ pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
             if recursive {
                 for entry in walkdir::WalkDir::new(input).into_iter().filter_map(|e| e.ok()) {
                     if entry.file_type().is_file() {
-                        files.push(entry.path().to_path_buf());
+                        let p = entry.path().to_path_buf();
+                        if !is_staging_name(&p) {
+                            files.push(p);
+                        }
                     }
                 }
             } else if let Ok(read_dir) = std::fs::read_dir(input) {
                 for entry in read_dir.filter_map(|e| e.ok()) {
                     let path = entry.path();
-                    if path.is_file() {
+                    if path.is_file() && !is_staging_name(&path) {
                         files.push(path);
                     }
                 }
@@ -312,7 +499,7 @@ pub fn print_supported_formats() {
     println!("  {} {}", "🖼  Images".bold(), "(native, no dependencies)".dimmed());
     println!(
         "     {}",
-        "png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, pnm, tga, dds, hdr, farbfeld, qoi, exr"
+        "png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, heic/heif (ffmpeg), pnm, tga, dds, hdr, farbfeld, qoi, exr"
             .cyan()
     );
     println!();
@@ -349,8 +536,8 @@ pub fn print_supported_formats() {
     println!("  {}  {}", "tummler archive.zip tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
     println!(
         "  {}  {}",
-        "tummler ./photos webp -r -o ./out".dimmed(),
-        "→ batch + recursive".dimmed()
+        "tummler ./photos webp -r --include '*.png' --skip-newer".dimmed(),
+        "→ batch + filter".dimmed()
     );
 }
 
@@ -379,6 +566,7 @@ mod tests {
     #[test]
     fn test_classify() {
         assert_eq!(classify_ext("png"), FormatKind::Image);
+        assert_eq!(classify_ext("heic"), FormatKind::Image);
         assert_eq!(classify_ext("jpeg"), FormatKind::Image);
         assert_eq!(classify_ext("mp4"), FormatKind::Media);
         assert_eq!(classify_ext("pdf"), FormatKind::Document);
@@ -491,6 +679,60 @@ mod tests {
         assert_eq!(sniff_suffix(b"GIF89a"), ".gif");
         assert_eq!(sniff_suffix(b"%PDF-1.4"), ".pdf");
         assert_eq!(sniff_suffix(b"????ftypisom"), ".mp4");
+        assert_eq!(sniff_suffix(b"????ftypheic"), ".heic");
         assert_eq!(sniff_suffix(b"xxxx"), "");
+    }
+
+    #[test]
+    fn test_glob_match() {
+        assert!(glob_match("*.png", "a.png"));
+        assert!(glob_match("*.png", "A.PNG"));
+        assert!(!glob_match("*.png", "a.jpg"));
+        assert!(!glob_match("*.png", "dir/a.png"));
+        assert!(glob_match("*_raw*", "img_raw_1.png"));
+        assert!(glob_match("photos/*", "photos/a.png"));
+        assert!(glob_match("**/*.png", "a/b/c.png"));
+        assert!(path_matches_glob(Path::new("dir/a.png"), "*.png"));
+        assert!(!passes_filters(
+            Path::new("a.jpg"),
+            &["*.png".into()],
+            &[]
+        ));
+        assert!(!passes_filters(
+            Path::new("img_raw.png"),
+            &[],
+            &["*_raw*".into()]
+        ));
+    }
+
+    #[test]
+    fn test_human_bytes_and_summary() {
+        assert_eq!(human_bytes(500), "500 B");
+        assert_eq!(human_bytes(1024), "1.0 KB");
+        let s = format_summary(12, 0, 0, 48 * 1024 * 1024, 11 * 1024 * 1024);
+        assert!(s.contains("12 files"));
+        assert!(s.contains("48 MB"));
+        assert!(s.contains("11 MB"));
+        assert!(s.contains("-77%"));
+        assert_eq!(format_summary(0, 3, 0, 0, 0), "3 skipped");
+    }
+
+    #[test]
+    fn test_output_up_to_date() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        std::fs::write(&a, b"x").unwrap();
+        std::fs::write(&b, b"y").unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&b)
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        assert!(output_up_to_date(&a, &b));
+        assert!(!output_up_to_date(&b, &a));
+        assert!(!output_up_to_date(&a, Path::new("/no/such/file")));
     }
 }

@@ -1,5 +1,7 @@
 use crate::deps;
 use crate::error::TummlerError;
+use crate::geom::{ffmpeg_scale_filter, Geometry};
+use crate::interrupt;
 use crate::util::normalize_ext;
 use std::path::Path;
 use std::process::Command;
@@ -12,6 +14,7 @@ pub fn convert_media(
     ffmpeg_args: Option<&str>,
     no_auto_install: bool,
     assume_yes: bool,
+    geometry: &Geometry,
 ) -> Result<(), TummlerError> {
     deps::ensure_available("ffmpeg", no_auto_install, assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("ffmpeg".into(), e))?;
@@ -26,39 +29,55 @@ pub fn convert_media(
         .map(normalize_ext)
         .unwrap_or_default();
 
+    let user_has_vf = ffmpeg_args.is_some_and(|s| {
+        s.split_whitespace()
+            .any(|a| a == "-vf" || a == "-filter:v" || a == "-filter_complex")
+    });
+    let scale = if user_has_vf {
+        None
+    } else {
+        ffmpeg_scale_filter(geometry)
+    };
+
     if out_ext == "gif" && ffmpeg_args.is_none() {
-        cmd.args([
-            "-vf",
-            "fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
-            "-loop",
-            "0",
-        ]);
-    } else if let Some(q) = quality {
-        let q = q.clamp(1, 100);
-        let is_video = matches!(
-            out_ext.as_str(),
-            "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp"
-                | "gif" | "m4v"
+        let scale_part = scale
+            .as_deref()
+            .unwrap_or("scale=480:-1:flags=lanczos");
+        let vf = format!(
+            "fps=15,{scale_part},split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
         );
-        if is_video {
-            if out_ext != "gif" {
-                let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
-                cmd.arg("-crf").arg(crf.to_string());
-                // -preset is libx264/x265 only; webm/vp9 does not have it and ffmpeg fails
-                if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
-                    cmd.arg("-preset").arg(if q >= 80 { "slow" } else { "medium" });
+        cmd.args(["-vf", &vf, "-loop", "0"]);
+    } else {
+        if let Some(ref vf) = scale {
+            cmd.args(["-vf", vf]);
+        }
+        if let Some(q) = quality {
+            let q = q.clamp(1, 100);
+            let is_video = matches!(
+                out_ext.as_str(),
+                "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp"
+                    | "gif" | "m4v"
+            );
+            if is_video {
+                if out_ext != "gif" {
+                    let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
+                    cmd.arg("-crf").arg(crf.to_string());
+                    // -preset is libx264/x265 only; webm/vp9 does not have it and ffmpeg fails
+                    if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
+                        cmd.arg("-preset").arg(if q >= 80 { "slow" } else { "medium" });
+                    }
                 }
+            } else {
+                let bitrate = match q {
+                    90..=100 => "320k",
+                    80..=89 => "256k",
+                    60..=79 => "192k",
+                    40..=59 => "128k",
+                    20..=39 => "96k",
+                    _ => "64k",
+                };
+                cmd.arg("-b:a").arg(bitrate);
             }
-        } else {
-            let bitrate = match q {
-                90..=100 => "320k",
-                80..=89 => "256k",
-                60..=79 => "192k",
-                40..=59 => "128k",
-                20..=39 => "96k",
-                _ => "64k",
-            };
-            cmd.arg("-b:a").arg(bitrate);
         }
     }
 
@@ -75,8 +94,7 @@ pub fn convert_media(
 
     cmd.arg(output);
 
-    let output_result = cmd
-        .output()
+    let output_result = interrupt::run(&mut cmd)
         .map_err(|e| TummlerError::MediaError(e.to_string()))?;
 
     if !output_result.status.success() {

@@ -2,6 +2,10 @@
 
 ## 0.1.0 — 2026-10-20
 
+- Batch summary: `12 files, 48 MB → 11 MB (-77%)`
+- `--include` / `--exclude` globs; `--skip-newer` for folders
+- `--max PX` / `--resize 50%|800x|x600|800x600` for images and video
+- HEIC/HEIF via ffmpeg; Ctrl-C kills ffmpeg/pandoc and exits 130
 - Positional format: `tummler img.png jpg` (or `-f jpeg` / `-o out.webp`)
 - Fixes: `mut cli` (build), stdin+files, in-place `--overwrite`, stdin sniff, `-preset` only for mp4/mkv
 - Install: one-command `install.sh`

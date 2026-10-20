@@ -5,9 +5,22 @@ pub mod media;
 
 use crate::deps;
 use crate::error::TummlerError;
-use crate::util::{classify_ext, get_extension, is_stdio, normalize_ext, staging_path, FormatKind};
+use crate::geom::Geometry;
+use crate::util::{
+    classify_ext, get_extension, is_heif, is_stdio, normalize_ext, staging_path, FormatKind,
+};
 use colored::Colorize;
 use std::path::Path;
+
+pub struct ConvertOpts<'a> {
+    pub quality: Option<u8>,
+    pub overwrite: bool,
+    pub ffmpeg_args: Option<&'a str>,
+    pub no_auto_install: bool,
+    pub assume_yes: bool,
+    pub verbose: bool,
+    pub geometry: &'a Geometry,
+}
 
 /// Check external dependencies once before a parallel batch.
 pub fn prefetch_deps(
@@ -17,17 +30,19 @@ pub fn prefetch_deps(
     assume_yes: bool,
 ) -> Result<(), TummlerError> {
     let target_kind = classify_ext(target_ext);
-    let mut need_ffmpeg = target_kind == FormatKind::Media;
+    let mut need_ffmpeg = target_kind == FormatKind::Media || is_heif(target_ext);
     let need_pandoc = target_kind == FormatKind::Document;
 
     if target_kind == FormatKind::Image {
-        need_ffmpeg = inputs.iter().any(|p| {
-            is_stdio(p)
-                || matches!(
-                    classify_ext(&get_extension(p).unwrap_or_default()),
-                    FormatKind::Media | FormatKind::Document
-                )
-        });
+        need_ffmpeg = need_ffmpeg
+            || inputs.iter().any(|p| {
+                is_stdio(p)
+                    || is_heif(&get_extension(p).unwrap_or_default())
+                    || matches!(
+                        classify_ext(&get_extension(p).unwrap_or_default()),
+                        FormatKind::Media | FormatKind::Document
+                    )
+            });
     }
 
     if need_ffmpeg {
@@ -48,12 +63,7 @@ pub fn convert_file(
     input: &Path,
     output: &Path,
     target_ext: &str,
-    quality: Option<u8>,
-    overwrite: bool,
-    ffmpeg_args: Option<&str>,
-    no_auto_install: bool,
-    assume_yes: bool,
-    verbose: bool,
+    opts: &ConvertOpts<'_>,
 ) -> Result<(), TummlerError> {
     let target_ext = normalize_ext(target_ext);
     let target_kind = classify_ext(&target_ext);
@@ -65,7 +75,7 @@ pub fn convert_file(
         classify_ext(&source_ext)
     };
 
-    if verbose {
+    if opts.verbose {
         eprintln!(
             "  {} {} ({}:{:?}) → {} ({}:{:?})",
             "→".dimmed(),
@@ -78,7 +88,7 @@ pub fn convert_file(
         );
     }
 
-    if output.exists() && !overwrite {
+    if output.exists() && !opts.overwrite {
         return Err(TummlerError::Other(format!(
             "file already exists: {} (use --overwrite / --force)",
             output.display()
@@ -96,45 +106,44 @@ pub fn convert_file(
         let _ = std::fs::remove_file(&staging);
     }
 
-    let result = match target_kind {
-        FormatKind::Image => match source_kind {
-            FormatKind::Media | FormatKind::Document => {
-                media::convert_media(
-                    input,
-                    &staging,
-                    quality,
-                    ffmpeg_args,
-                    no_auto_install,
-                    assume_yes,
-                )
-            }
-            FormatKind::Archive => Err(TummlerError::UnsupportedConversion(
-                source_ext,
-                target_ext.clone(),
-            )),
-            FormatKind::Unknown => match image::convert_image(input, &staging, quality) {
-                Ok(()) => Ok(()),
-                Err(_) => media::convert_media(
-                    input,
-                    &staging,
-                    quality,
-                    ffmpeg_args,
-                    no_auto_install,
-                    assume_yes,
-                ),
-            },
-            FormatKind::Image => image::convert_image(input, &staging, quality),
-        },
-        FormatKind::Media => media::convert_media(
+    let via_ffmpeg = || {
+        media::convert_media(
             input,
             &staging,
-            quality,
-            ffmpeg_args,
-            no_auto_install,
-            assume_yes,
-        ),
+            opts.quality,
+            opts.ffmpeg_args,
+            opts.no_auto_install,
+            opts.assume_yes,
+            opts.geometry,
+        )
+    };
+
+    let result = match target_kind {
+        FormatKind::Image => {
+            if is_heif(&source_ext) || is_heif(&target_ext) {
+                via_ffmpeg()
+            } else {
+                match source_kind {
+                    FormatKind::Media | FormatKind::Document => via_ffmpeg(),
+                    FormatKind::Archive => Err(TummlerError::UnsupportedConversion(
+                        source_ext,
+                        target_ext.clone(),
+                    )),
+                    FormatKind::Unknown => {
+                        match image::convert_image(input, &staging, opts.quality, opts.geometry) {
+                            Ok(()) => Ok(()),
+                            Err(_) => via_ffmpeg(),
+                        }
+                    }
+                    FormatKind::Image => {
+                        image::convert_image(input, &staging, opts.quality, opts.geometry)
+                    }
+                }
+            }
+        }
+        FormatKind::Media => via_ffmpeg(),
         FormatKind::Document => {
-            document::convert_document(input, &staging, no_auto_install, assume_yes)
+            document::convert_document(input, &staging, opts.no_auto_install, opts.assume_yes)
         }
         FormatKind::Archive => archive::convert_archive(input, &staging),
         FormatKind::Unknown => Err(TummlerError::UnsupportedFormat(target_ext.clone())),
