@@ -34,23 +34,27 @@ Format last. That’s the whole trick.
 
 ## Install
 
-```bash
-cargo install --git https://github.com/RUdolf1517/tummler --branch arena/ce98465f-tummler
-```
-
-Needs [Rust 1.74+](https://rustup.rs). Binary lands in `~/.cargo/bin`.
+**One command — no Rust.** Downloads a binary into `~/.local/bin`:
 
 ```bash
-# later, from a GitHub Release
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
 ```
 
-macOS and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler will offer to install them in a TTY.
-
-<details>
-<summary>From source / Linux headers</summary>
+Needs a [GitHub Release](https://github.com/RUdolf1517/tummler/releases) (`v0.1.0+`). Until then, or if you already have a toolchain:
 
 ```bash
+cargo install --git https://github.com/RUdolf1517/tummler
+```
+
+macOS and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY.
+
+<details>
+<summary>From source</summary>
+
+```bash
+# macOS
+brew install pkg-config xz
+
 # Debian/Ubuntu
 sudo apt install pkg-config liblzma-dev libbz2-dev cmake
 

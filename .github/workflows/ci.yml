@@ -19,4 +19,4 @@ jobs:
       - name: cargo build
         run: cargo build
       - name: cargo clippy
-        run: cargo clippy -- -D warnings || true
+        run: cargo clippy -- -D warnings

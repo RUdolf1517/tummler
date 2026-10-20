@@ -25,7 +25,7 @@ The last argument is the format if it is a known extension.
 `--` separates files whose names start with `-`.
 ";
 
-/// tummler — universal file converter
+/// tummler — mix any file into any format
 ///
 /// Examples:
 ///   tummler photo.png jpg
