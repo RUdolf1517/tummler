@@ -77,7 +77,7 @@ pub fn convert_image(
     };
 
     match output_ext.as_str() {
-        "jpg" | "jpeg" => {
+        "jpg" => {
             let q = quality.unwrap_or(90).clamp(1, 100);
             let file = std::fs::File::create(output).map_err(map_io)?;
             let mut writer = BufWriter::with_capacity(BUF, file);
@@ -107,7 +107,13 @@ fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::Dynam
     if nw == w && nh == h {
         img
     } else {
-        img.resize(nw, nh, image::imageops::FilterType::Lanczos3)
+        // Triangle is much cheaper on the downscale hot path; Lanczos for upscale.
+        let filter = if (nw as u64) * (nh as u64) < (w as u64) * (h as u64) {
+            image::imageops::FilterType::Triangle
+        } else {
+            image::imageops::FilterType::Lanczos3
+        };
+        img.resize(nw, nh, filter)
     }
 }
 
@@ -117,7 +123,7 @@ fn image_format_from_ext(ext: &str) -> Option<image::ImageFormat> {
         "gif" => image::ImageFormat::Gif,
         "bmp" => image::ImageFormat::Bmp,
         "ico" => image::ImageFormat::Ico,
-        "tiff" | "tif" => image::ImageFormat::Tiff,
+        "tiff" => image::ImageFormat::Tiff,
         "webp" => image::ImageFormat::WebP,
         "pnm" | "pbm" | "pgm" | "ppm" => image::ImageFormat::Pnm,
         "tga" => image::ImageFormat::Tga,

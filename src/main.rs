@@ -682,6 +682,20 @@ fn materialize_stdin() -> io::Result<tempfile::NamedTempFile> {
     tmp.write_all(&header[..n])?;
     io::copy(&mut stdin, tmp.as_file_mut())?;
     tmp.flush()?;
+    // Magic is only `PK` — distinguish zip from OOXML/ODF so convert routes right.
+    if suffix == ".zip" {
+        let kind = convert::archive::peek_zip_kind(tmp.path());
+        if kind != ".zip" {
+            let mut better = tempfile::Builder::new()
+                .prefix("tummler-stdin-")
+                .suffix(kind)
+                .tempfile()?;
+            let mut src = std::fs::File::open(tmp.path())?;
+            io::copy(&mut src, better.as_file_mut())?;
+            better.flush()?;
+            return Ok(better);
+        }
+    }
     Ok(tmp)
 }
 

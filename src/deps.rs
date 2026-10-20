@@ -43,11 +43,6 @@ pub fn install_hint(bin: &str) -> String {
             "Fedora:".bold(),
             "Website:".bold()
         ),
-        "ffprobe" => format!(
-            "ffprobe usually ships with ffmpeg:\n  {} brew install ffmpeg\n  {} sudo apt install ffmpeg",
-            "macOS:".bold(),
-            "Debian/Ubuntu:".bold()
-        ),
         "pandoc" => format!(
             "Install pandoc:\n  {}  brew install pandoc\n  {}  sudo apt install pandoc\n  {}  https://pandoc.org/installing.html",
             "macOS:".bold(),
@@ -128,12 +123,10 @@ fn run_install(bin: &str, cmd: &str) -> bool {
 }
 
 fn detect_install_command(bin: &str) -> Option<String> {
-    let pkg = bin_for_pkg(bin);
-
     #[cfg(target_os = "macos")]
     {
         if which::which("brew").is_ok() {
-            return Some(format!("brew install {pkg}"));
+            return Some(format!("brew install {bin}"));
         }
         None
     }
@@ -141,34 +134,27 @@ fn detect_install_command(bin: &str) -> Option<String> {
     #[cfg(target_os = "linux")]
     {
         if which::which("brew").is_ok() {
-            return Some(format!("brew install {pkg}"));
+            return Some(format!("brew install {bin}"));
         }
         if which::which("apt").is_ok() || which::which("apt-get").is_ok() {
-            return Some(format!("sudo apt update && sudo apt install -y {pkg}"));
+            return Some(format!("sudo apt update && sudo apt install -y {bin}"));
         }
         if which::which("dnf").is_ok() {
-            return Some(format!("sudo dnf install -y {pkg}"));
+            return Some(format!("sudo dnf install -y {bin}"));
         }
         if which::which("pacman").is_ok() {
-            return Some(format!("sudo pacman -S --noconfirm {pkg}"));
+            return Some(format!("sudo pacman -S --noconfirm {bin}"));
         }
         if which::which("zypper").is_ok() {
-            return Some(format!("sudo zypper install -y {pkg}"));
+            return Some(format!("sudo zypper install -y {bin}"));
         }
         None
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        let _ = pkg;
+        let _ = bin;
         None
-    }
-}
-
-fn bin_for_pkg(bin: &str) -> &str {
-    match bin {
-        "ffprobe" => "ffmpeg",
-        other => other,
     }
 }
 
@@ -200,19 +186,16 @@ pub fn check_all() {
     println!();
 
     let deps = [
-        ("ffmpeg", "Audio/video conversion", true),
-        ("ffprobe", "Media inspection (optional)", false),
-        ("pandoc", "Document conversion", true),
+        ("ffmpeg", "Audio/video conversion"),
+        ("pandoc", "Document conversion"),
     ];
 
-    for (bin, desc, required) in deps {
+    for (bin, desc) in deps {
         let available = is_available(bin);
         let status = if available {
             "✓ installed".green()
-        } else if required {
-            "✗ not found".red()
         } else {
-            "○ not found (optional)".yellow()
+            "✗ not found".red()
         };
         println!("  {:12}  {}  — {}", bin.bold(), status, desc);
         if !available {

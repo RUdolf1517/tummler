@@ -4,7 +4,13 @@
 
 - Allowlist: `m4b` `ogv` `vob` `caf` (ffmpeg), `ipynb` (pandoc)
 - SVG → png/jpg/… via resvg (svg is input-only)
-- `zip` → `tar`/`tar.gz`/… streamed (no temp unpack); zip-slip entries skipped
+- `zip` ↔ `tar`/`tar.gz`/… streamed (no temp unpack); zip-slip / tar-slip entries skipped
+- `tar` ↔ `tar.gz`/`tar.bz2`/`tar.xz`/`tar.zst` recompresses the payload (no unpack)
+- Zip files packed as `0o644` (dirs `0o755`)
+- Stdin `PK…`: sniff OOXML/ODF (`docx`/`xlsx`/`pptx`/`odt`/`ods`/`odp`) instead of always `.zip`
+- `ftyp avif` sniffed as AVIF, not MP4
+- ffmpeg `-c copy` failure deletes the staging file before re-encode
+- Image `--max`/`--resize` downscale uses Triangle (Lanczos stays for upscale)
 - AVIF via ffmpeg (dropped rav1e from the `image` crate)
 - Spreadsheets: `tummler table.xlsx csv` / `txt` (xlsx, xlsm, xlsb, xls, ods via calamine)
 - Spreadsheets: `tummler table.csv xlsx` and `xls`/`ods`/`xlsm`/`xlsb` → xlsx (rust_xlsxwriter, no LibreOffice)

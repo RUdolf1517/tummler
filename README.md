@@ -230,7 +230,7 @@ tummler --completions fish > ~/.config/fish/completions/tummler.fish
 
 ```
 tummler ─┬─ images       →  image crate; svg via resvg; avif/heic via ffmpeg
-         ├─ archives     →  zip / tar / gz / bz2 / xz / zstd (zip→tar streamed)
+         ├─ archives     →  zip / tar / gz / bz2 / xz / zstd (zip↔tar streamed)
          ├─ audio/video  →  ffmpeg
          ├─ spreadsheets →  calamine + rust_xlsxwriter (no LibreOffice)
          ├─ slides       →  soffice if already installed; pptx ↔ ppsx is a copy

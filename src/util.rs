@@ -248,6 +248,9 @@ pub fn sniff_suffix(header: &[u8]) -> &'static str {
         ) {
             return ".heic";
         }
+        if matches!(brand, b"avif" | b"avis" | b"avio") {
+            return ".avif";
+        }
         return ".mp4";
     }
     if header.len() >= 8 && header.starts_with(&[0xD0, 0xCF, 0x11, 0xE0]) {
@@ -354,7 +357,7 @@ pub enum FormatKind {
 pub fn classify_ext(ext: &str) -> FormatKind {
     let ext = normalize_ext(ext);
     match ext.as_str() {
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "ico" | "tiff" | "tif"
+        "png" | "jpg" | "gif" | "bmp" | "ico" | "tiff"
         | "webp" | "avif" | "pnm" | "pbm" | "pgm" | "ppm" | "tga" | "dds"
         | "hdr" | "farbfeld" | "ff" | "qoi" | "exr" | "openexr"
         | "heic" | "heif" | "svg" | "svgz" => FormatKind::Image,
@@ -366,14 +369,14 @@ pub fn classify_ext(ext: &str) -> FormatKind {
         | "aiff" | "aif" | "alac" | "ac3" | "dts" | "amr" | "au" | "ra"
         | "m4b" | "caf" => FormatKind::Media,
 
-        "pdf" | "docx" | "doc" | "odt" | "html" | "htm" | "md" | "markdown" | "tex"
+        "pdf" | "docx" | "doc" | "odt" | "html" | "md" | "tex"
         | "rst" | "epub" | "pptx" | "ppt" | "ppsx" | "pps" | "odp"
         | "csv" | "json" | "txt" | "rtf"
         | "org" | "adoc" | "djvu" | "fb2" | "ipynb" => FormatKind::Document,
 
         "xlsx" | "xlsm" | "xlsb" | "xls" | "ods" => FormatKind::Spreadsheet,
 
-        "zip" | "tar" | "tar.gz" | "tgz" | "tar.bz2" | "tar.xz" | "gz" | "bz2"
+        "zip" | "tar" | "tar.gz" | "tar.bz2" | "tar.xz" | "gz" | "bz2"
         | "xz" | "zst" | "tar.zst" => FormatKind::Archive,
 
         _ => FormatKind::Unknown,
@@ -684,6 +687,8 @@ mod tests {
         assert_eq!(classify_ext("xls"), FormatKind::Spreadsheet);
         assert_eq!(classify_ext("ods"), FormatKind::Spreadsheet);
         assert_eq!(classify_ext("zip"), FormatKind::Archive);
+        assert_eq!(classify_ext("tgz"), FormatKind::Archive);
+        assert_eq!(classify_ext("htm"), FormatKind::Document);
         assert_eq!(classify_ext("xyz"), FormatKind::Unknown);
         assert!(is_supported_output("xlsx"));
         assert!(!is_supported_output("xls"));
@@ -801,6 +806,7 @@ mod tests {
         assert_eq!(sniff_suffix(b"%PDF-1.4"), ".pdf");
         assert_eq!(sniff_suffix(b"????ftypisom"), ".mp4");
         assert_eq!(sniff_suffix(b"????ftypheic"), ".heic");
+        assert_eq!(sniff_suffix(b"????ftypavif"), ".avif");
         assert_eq!(sniff_suffix(b"xxxx"), "");
     }
 

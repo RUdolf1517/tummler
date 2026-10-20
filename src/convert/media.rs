@@ -57,9 +57,13 @@ fn ffmpeg_copy(input: &Path, output: &Path) -> bool {
     cmd.arg("-i").arg(input);
     cmd.args(["-c", "copy"]);
     cmd.arg(output);
-    interrupt::run(&mut cmd)
+    let ok = interrupt::run(&mut cmd)
         .ok()
-        .is_some_and(|r| r.status.success())
+        .is_some_and(|r| r.status.success());
+    if !ok {
+        let _ = std::fs::remove_file(output);
+    }
+    ok
 }
 
 /// Audio/video conversion via ffmpeg.

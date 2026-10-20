@@ -1,7 +1,7 @@
 use crate::error::TummlerError;
 use crate::util::{get_extension, normalize_ext};
 use std::fs::File;
-use std::io::{self, Seek, Write};
+use std::io::{self, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
 fn is_archive_ext(ext: &str) -> bool {
@@ -21,7 +21,8 @@ fn is_tar_family(ext: &str) -> bool {
 /// Archive conversion (repack) and compression of plain files.
 ///
 /// Supports: zip, tar, tar.gz/tgz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst
-/// - Archive → archive: unpack to a temp dir and pack again
+/// - zip ↔ tar.* and tar ↔ tar.*: stream entries / recompress (no unpack)
+/// - other archive pairs: unpack to a temp dir (slip-safe) and pack again
 /// - Plain file → gz/zip/tar.*: compress / pack a single file
 pub fn convert_archive(input: &Path, output: &Path) -> Result<(), TummlerError> {
     let input_ext = normalize_ext(&get_extension(input).unwrap_or_default());
@@ -45,6 +46,12 @@ pub fn convert_archive(input: &Path, output: &Path) -> Result<(), TummlerError> 
 
     if input_ext == "zip" && is_tar_family(&output_ext) {
         return zip_to_tar(input, output, &output_ext);
+    }
+    if is_tar_family(&input_ext) && output_ext == "zip" {
+        return tar_to_zip(input, output, &input_ext);
+    }
+    if is_tar_family(&input_ext) && is_tar_family(&output_ext) {
+        return recompress_tar(input, &input_ext, output, &output_ext);
     }
 
     // Temp directory for unpacking
@@ -291,6 +298,194 @@ fn append_zip_to_tar<W: Write, R: io::Read + Seek>(
     Ok(())
 }
 
+/// Skip `..`, absolute paths, Windows prefixes. Same idea as zip `enclosed_name`.
+fn safe_rel_path(path: &Path) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            std::path::Component::Normal(p) => out.push(p),
+            std::path::Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    if out.as_os_str().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+/// PK zip vs OOXML/ODF — stdin sniff only sees `PK`.
+pub fn peek_zip_kind(path: &Path) -> &'static str {
+    let Ok(file) = File::open(path) else {
+        return ".zip";
+    };
+    let Ok(mut zip) = zip::ZipArchive::new(file) else {
+        return ".zip";
+    };
+    let mut mime = String::new();
+    if let Ok(mut f) = zip.by_name("mimetype") {
+        let _ = f.read_to_string(&mut mime);
+    }
+    if mime.contains("opendocument.text") {
+        return ".odt";
+    }
+    if mime.contains("opendocument.spreadsheet") {
+        return ".ods";
+    }
+    if mime.contains("opendocument.presentation") {
+        return ".odp";
+    }
+    for i in 0..zip.len() {
+        let Ok(name) = zip.by_index(i).map(|e| e.name().replace('\\', "/")) else {
+            continue;
+        };
+        let n = name.to_ascii_lowercase();
+        if n.starts_with("word/") {
+            return ".docx";
+        }
+        if n.starts_with("xl/") {
+            return ".xlsx";
+        }
+        if n.starts_with("ppt/") {
+            return ".pptx";
+        }
+    }
+    ".zip"
+}
+
+fn tar_to_zip(input: &Path, output: &Path, in_ext: &str) -> Result<(), TummlerError> {
+    let file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    match in_ext {
+        "tar" => tar_reader_to_zip(tar::Archive::new(file), output),
+        "tar.gz" => tar_reader_to_zip(tar::Archive::new(flate2::read::GzDecoder::new(file)), output),
+        "tar.bz2" => tar_reader_to_zip(tar::Archive::new(bzip2::read::BzDecoder::new(file)), output),
+        "tar.xz" => tar_reader_to_zip(tar::Archive::new(xz2::read::XzDecoder::new(file)), output),
+        "tar.zst" => {
+            let dec = zstd::stream::read::Decoder::new(file)
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            tar_reader_to_zip(tar::Archive::new(dec), output)
+        }
+        _ => Err(TummlerError::ArchiveError(format!(
+            "unsupported source archive format: {in_ext}"
+        ))),
+    }
+}
+
+fn tar_reader_to_zip<R: Read>(
+    mut archive: tar::Archive<R>,
+    output: &Path,
+) -> Result<(), TummlerError> {
+    let file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let mut zip = zip::ZipWriter::new(io::BufWriter::with_capacity(64 * 1024, file));
+    let file_opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+    let dir_opts = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
+
+    for ent in archive
+        .entries()
+        .map_err(|e| TummlerError::ArchiveError(e.to_string()))?
+    {
+        let mut ent = ent.map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        let name = match ent.path() {
+            Ok(p) => safe_rel_path(&p).map(|rel| rel.to_string_lossy().replace('\\', "/")),
+            Err(_) => None,
+        };
+        let Some(name) = name.filter(|n| !n.is_empty()) else {
+            io::copy(&mut ent, &mut io::sink()).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            continue;
+        };
+        let kind = ent.header().entry_type();
+        if kind.is_dir() {
+            zip.add_directory(&name, dir_opts)
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        } else if kind.is_file() {
+            zip.start_file(&name, file_opts)
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            io::copy(&mut ent, &mut zip).map_err(|e| TummlerError::IoError(e.to_string()))?;
+        } else {
+            io::copy(&mut ent, &mut io::sink()).map_err(|e| TummlerError::IoError(e.to_string()))?;
+        }
+    }
+    let mut inner = zip
+        .finish()
+        .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+    inner.flush().map_err(|e| TummlerError::IoError(e.to_string()))?;
+    Ok(())
+}
+
+/// `tar` ↔ `tar.gz` / `tar.bz2` / … is a compression wrap, not unpack+repack.
+fn recompress_tar(
+    input: &Path,
+    in_ext: &str,
+    output: &Path,
+    out_ext: &str,
+) -> Result<(), TummlerError> {
+    let inf = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let outf = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    match in_ext {
+        "tar" => encode_tar_stream(inf, outf, out_ext),
+        "tar.gz" => encode_tar_stream(flate2::read::GzDecoder::new(inf), outf, out_ext),
+        "tar.bz2" => encode_tar_stream(bzip2::read::BzDecoder::new(inf), outf, out_ext),
+        "tar.xz" => encode_tar_stream(xz2::read::XzDecoder::new(inf), outf, out_ext),
+        "tar.zst" => {
+            let dec = zstd::stream::read::Decoder::new(inf)
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            encode_tar_stream(dec, outf, out_ext)
+        }
+        _ => Err(TummlerError::ArchiveError(format!(
+            "unsupported source archive format: {in_ext}"
+        ))),
+    }
+}
+
+fn encode_tar_stream<R: Read>(
+    mut src: R,
+    outf: File,
+    out_ext: &str,
+) -> Result<(), TummlerError> {
+    match out_ext {
+        "tar" => {
+            let mut out = io::BufWriter::with_capacity(64 * 1024, outf);
+            io::copy(&mut src, &mut out).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            out.flush().map_err(|e| TummlerError::IoError(e.to_string()))?;
+        }
+        "tar.gz" => {
+            let mut enc =
+                flate2::write::GzEncoder::new(outf, flate2::Compression::default());
+            io::copy(&mut src, &mut enc).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            enc.finish()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "tar.bz2" => {
+            let mut enc = bzip2::write::BzEncoder::new(outf, bzip2::Compression::default());
+            io::copy(&mut src, &mut enc).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            enc.finish()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "tar.xz" => {
+            let mut enc = xz2::write::XzEncoder::new(outf, 6);
+            io::copy(&mut src, &mut enc).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            enc.finish()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "tar.zst" => {
+            let mut enc = zstd::stream::write::Encoder::new(outf, 3)
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            io::copy(&mut src, &mut enc).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            enc.finish()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        _ => {
+            return Err(TummlerError::ArchiveError(format!(
+                "unsupported target archive format: {out_ext}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn compress_file(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerError> {
     let mut input_file = io::BufReader::with_capacity(
         64 * 1024,
@@ -404,43 +599,47 @@ fn unpack_zip(input: &Path, dest: &Path) -> Result<(), TummlerError> {
     Ok(())
 }
 
+fn unpack_tar_archive<R: Read>(
+    mut archive: tar::Archive<R>,
+    dest: &Path,
+) -> Result<(), TummlerError> {
+    // `unpack_in` skips `..` / root (zip-slip). Plain `unpack()` does not.
+    for ent in archive
+        .entries()
+        .map_err(|e| TummlerError::ArchiveError(e.to_string()))?
+    {
+        let mut ent = ent.map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        ent.unpack_in(dest)
+            .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+    }
+    Ok(())
+}
+
 fn unpack_tar(input: &Path, dest: &Path) -> Result<(), TummlerError> {
     let file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let mut archive = tar::Archive::new(file);
-    archive.unpack(dest).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    Ok(())
+    unpack_tar_archive(tar::Archive::new(file), dest)
 }
 
 fn unpack_tar_gz(input: &Path, dest: &Path) -> Result<(), TummlerError> {
     let file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let gz = flate2::read::GzDecoder::new(file);
-    let mut archive = tar::Archive::new(gz);
-    archive.unpack(dest).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    Ok(())
+    unpack_tar_archive(tar::Archive::new(flate2::read::GzDecoder::new(file)), dest)
 }
 
 fn unpack_tar_bz2(input: &Path, dest: &Path) -> Result<(), TummlerError> {
     let file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let bz = bzip2::read::BzDecoder::new(file);
-    let mut archive = tar::Archive::new(bz);
-    archive.unpack(dest).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    Ok(())
+    unpack_tar_archive(tar::Archive::new(bzip2::read::BzDecoder::new(file)), dest)
 }
 
 fn unpack_tar_xz(input: &Path, dest: &Path) -> Result<(), TummlerError> {
     let file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let xz = xz2::read::XzDecoder::new(file);
-    let mut archive = tar::Archive::new(xz);
-    archive.unpack(dest).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    Ok(())
+    unpack_tar_archive(tar::Archive::new(xz2::read::XzDecoder::new(file)), dest)
 }
 
 fn unpack_tar_zst(input: &Path, dest: &Path) -> Result<(), TummlerError> {
     let file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let decoder = zstd::stream::read::Decoder::new(file).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    let mut archive = tar::Archive::new(decoder);
-    archive.unpack(dest).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    Ok(())
+    let decoder = zstd::stream::read::Decoder::new(file)
+        .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+    unpack_tar_archive(tar::Archive::new(decoder), dest)
 }
 
 fn unpack_gz(input: &Path, dest: &Path) -> Result<(), TummlerError> {
@@ -491,9 +690,10 @@ fn unpack_zst(input: &Path, dest: &Path) -> Result<(), TummlerError> {
 fn pack_zip(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
     let file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
     let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
+    let file_opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
-        .unix_permissions(0o755);
+        .unix_permissions(0o644);
+    let dir_opts = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
 
     let mut files: Vec<PathBuf> = Vec::new();
     collect_files_recursive(src_dir, &mut files);
@@ -503,9 +703,9 @@ fn pack_zip(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
         let name_str = name.to_string_lossy().replace('\\', "/");
 
         if path.is_dir() {
-            zip.add_directory(&name_str, options).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            zip.add_directory(&name_str, dir_opts).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
         } else {
-            zip.start_file(&name_str, options).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            zip.start_file(&name_str, file_opts).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
             let mut f = io::BufReader::with_capacity(
                 64 * 1024,
                 File::open(path).map_err(|e| TummlerError::IoError(e.to_string()))?,
@@ -708,5 +908,110 @@ mod tests {
         assert_eq!(std::fs::read(unpacked.path().join("ok.txt")).unwrap(), b"ok");
         assert!(!dir.path().join("evil.txt").exists());
         assert!(!unpacked.path().join("evil.txt").exists());
+    }
+
+    fn write_tar(path: &Path, files: &[(&str, &[u8])]) {
+        let file = File::create(path).unwrap();
+        let mut builder = tar::Builder::new(file);
+        for (name, data) in files {
+            let mut header = tar::Header::new_gnu();
+            if header.set_path(name).is_err() {
+                let b = name.as_bytes();
+                header.as_old_mut().name[..b.len()].copy_from_slice(b);
+            }
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append(&header, *data).unwrap();
+        }
+        builder.finish().unwrap();
+    }
+
+    #[test]
+    fn tar_gz_to_tar_is_a_wrap() {
+        let dir = tempfile::tempdir().unwrap();
+        let tar_path = dir.path().join("a.tar");
+        write_tar(&tar_path, &[("a.txt", b"aaa"), ("b.txt", b"bbb")]);
+        let gz = dir.path().join("a.tar.gz");
+        convert_archive(&tar_path, &gz).unwrap();
+        let out = dir.path().join("b.tar");
+        convert_archive(&gz, &out).unwrap();
+        let unpacked = tempfile::tempdir().unwrap();
+        unpack_tar(&out, unpacked.path()).unwrap();
+        assert_eq!(std::fs::read(unpacked.path().join("a.txt")).unwrap(), b"aaa");
+        assert_eq!(std::fs::read(unpacked.path().join("b.txt")).unwrap(), b"bbb");
+    }
+
+    #[test]
+    fn tar_to_zip_keeps_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let tar_path = dir.path().join("a.tar");
+        write_tar(&tar_path, &[("a.txt", b"aaa"), ("dir/b.txt", b"bbb")]);
+        let zip_path = dir.path().join("a.zip");
+        convert_archive(&tar_path, &zip_path).unwrap();
+        let unpacked = tempfile::tempdir().unwrap();
+        unpack_zip(&zip_path, unpacked.path()).unwrap();
+        assert_eq!(std::fs::read(unpacked.path().join("a.txt")).unwrap(), b"aaa");
+        assert_eq!(
+            std::fs::read(unpacked.path().join("dir/b.txt")).unwrap(),
+            b"bbb"
+        );
+    }
+
+    #[test]
+    fn tar_slip_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let tar_path = dir.path().join("evil.tar");
+        write_tar(
+            &tar_path,
+            &[("../evil.txt", b"nope"), ("ok.txt", b"ok")],
+        );
+        let unpacked = tempfile::tempdir().unwrap();
+        unpack_tar(&tar_path, unpacked.path()).unwrap();
+        assert_eq!(std::fs::read(unpacked.path().join("ok.txt")).unwrap(), b"ok");
+        assert!(!dir.path().join("evil.txt").exists());
+        assert!(!unpacked.path().join("evil.txt").exists());
+        assert!(!unpacked.path().parent().unwrap().join("evil.txt").exists());
+    }
+
+    #[test]
+    fn peek_xlsx_is_not_a_plain_zip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.xlsx");
+        write_zip(
+            &path,
+            &[
+                ("[Content_Types].xml", b"<Types/>"),
+                ("xl/workbook.xml", b"<workbook/>"),
+            ],
+        );
+        assert_eq!(peek_zip_kind(&path), ".xlsx");
+        let zip = dir.path().join("a.zip");
+        write_zip(&zip, &[("readme.txt", b"hi")]);
+        assert_eq!(peek_zip_kind(&zip), ".zip");
+
+        let odt = dir.path().join("t.odt");
+        write_zip(
+            &odt,
+            &[(
+                "mimetype",
+                b"application/vnd.oasis.opendocument.text",
+            )],
+        );
+        assert_eq!(peek_zip_kind(&odt), ".odt");
+
+        let docx = dir.path().join("t.docx");
+        write_zip(&docx, &[("word/document.xml", b"<w/>")]);
+        assert_eq!(peek_zip_kind(&docx), ".docx");
+    }
+
+    #[test]
+    fn safe_rel_rejects_parent_and_absolute() {
+        assert_eq!(
+            safe_rel_path(Path::new("ok/a.txt")).as_deref(),
+            Some(Path::new("ok/a.txt"))
+        );
+        assert!(safe_rel_path(Path::new("../evil")).is_none());
+        assert!(safe_rel_path(Path::new("/etc/passwd")).is_none());
     }
 }
