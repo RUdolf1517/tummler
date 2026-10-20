@@ -52,4 +52,19 @@ jobs:
             echo "::error::${line:0:180}"
           done
       - name: cargo clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets --color=always -- -D warnings 2>&1 | tee cargo-clippy.log
+      - name: Publish clippy tail
+        if: failure()
+        run: |
+          {
+            echo '## cargo clippy (tail)'
+            echo
+            echo '```'
+            tail -n 80 cargo-clippy.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          tail -n 30 cargo-clippy.log | while IFS= read -r line; do
+            echo "::error::${line:0:180}"
+          done

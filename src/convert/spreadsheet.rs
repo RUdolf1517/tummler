@@ -109,8 +109,8 @@ fn resolve_sheet_name(names: &[String], want: Option<&str>) -> Result<String, Tu
 }
 
 fn format_number(f: f64) -> String {
-    if f.is_finite() && f.fract() == 0.0 && f.abs() < 1e15 {
-        format!("{f:.0}")
+    if f.is_finite() && f.abs() < 1e15 && (f - f.round()).abs() <= 1e-9 {
+        format!("{:.0}", f.round())
     } else {
         format!("{f}")
     }
