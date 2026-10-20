@@ -228,7 +228,7 @@ fn convert_slides(
     }
     #[cfg(not(feature = "slides"))]
     {
-        let _ = (no_auto_install, assume_yes);
+        let _ = (staging, no_auto_install, assume_yes);
         Err(TummlerError::UnsupportedConversion(
             crate::util::get_extension(input).unwrap_or_default(),
             target_ext.to_string(),

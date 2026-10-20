@@ -257,7 +257,6 @@ pub fn convert_spreadsheet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
     use zip::write::SimpleFileOptions;
 
     fn col_name(n: usize) -> String {
