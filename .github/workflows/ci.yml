@@ -30,23 +30,31 @@ jobs:
           cargo test --no-default-features --color=always 2>&1 | tee cargo-test.log
       - name: Publish cargo test lints
         if: failure()
-        run: python3 -c '
-          import pathlib,re
-          t=re.sub(r"\x1b\[[0-9;]*m","",pathlib.Path("cargo-test.log").read_text(errors="replace"))
-          hits=[ln[:200] for ln in t.splitlines() if "error:" in ln or "--> " in ln]
+        run: |
+          python3 <<'PY'
+          import pathlib, re
+          p = pathlib.Path("cargo-test.log")
+          if not p.exists():
+              raise SystemExit(0)
+          t = re.sub(r"\x1b\[[0-9;]*m", "", p.read_text(errors="replace"))
+          hits = [ln[:200] for ln in t.splitlines() if "error:" in ln or "--> " in ln]
           for ln in (hits[-40:] or t.splitlines()[-20:]):
-              print("::error::"+ln)
-          '
+              print("::error::" + ln)
+          PY
       - name: cargo clippy
         run: |
           set -o pipefail
           cargo clippy --no-default-features --all-targets --color=always -- -D warnings 2>&1 | tee cargo-clippy.log
       - name: Publish clippy lints
         if: failure()
-        run: python3 -c '
-          import pathlib,re
-          t=re.sub(r"\x1b\[[0-9;]*m","",pathlib.Path("cargo-clippy.log").read_text(errors="replace"))
-          hits=[ln[:220] for ln in t.splitlines() if "error:" in ln or "warning:" in ln or "--> " in ln]
+        run: |
+          python3 <<'PY'
+          import pathlib, re
+          p = pathlib.Path("cargo-clippy.log")
+          if not p.exists():
+              raise SystemExit(0)
+          t = re.sub(r"\x1b\[[0-9;]*m", "", p.read_text(errors="replace"))
+          hits = [ln[:220] for ln in t.splitlines() if "error:" in ln or "warning:" in ln or "--> " in ln]
           for ln in hits[-60:]:
-              print("::error::"+ln)
-          '
+              print("::error::" + ln)
+          PY
