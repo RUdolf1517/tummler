@@ -35,6 +35,21 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: cargo test
-        run: cargo test
+        run: |
+          set -o pipefail
+          cargo test --color=always 2>&1 | tee cargo-test.log
+      - name: Publish cargo test tail
+        if: failure()
+        run: |
+          {
+            echo '## cargo test (tail)'
+            echo
+            echo '```'
+            tail -n 80 cargo-test.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          tail -n 30 cargo-test.log | while IFS= read -r line; do
+            echo "::error::${line:0:180}"
+          done
       - name: cargo clippy
         run: cargo clippy --all-targets -- -D warnings

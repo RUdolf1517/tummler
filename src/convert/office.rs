@@ -2,7 +2,6 @@ use crate::error::TummlerError;
 use crate::util::{get_extension, normalize_ext};
 use hayro::hayro_interpret::InterpreterSettings;
 use hayro::hayro_syntax::Pdf;
-use hayro::vello_cpu::color::palette::css::WHITE;
 use hayro::{render, PixmapSettings, RenderCache, RenderSettings};
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -57,17 +56,13 @@ fn pptx_to_pdf(input: &Path, output: &Path) -> Result<(), TummlerError> {
             "native PDF export supports .pptx (not .{src})"
         )));
     }
-    let result = if src == "ppsx" {
-        let bytes = std::fs::read(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
-        office2pdf::convert_bytes(
-            &bytes,
-            office2pdf::config::Format::Pptx,
-            &office2pdf::config::ConvertOptions::default(),
-        )
-        .map_err(|e| TummlerError::OfficeError(e.to_string()))?
-    } else {
-        office2pdf::convert(input).map_err(|e| TummlerError::OfficeError(e.to_string()))?
-    };
+    let bytes = std::fs::read(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let result = office2pdf::convert_bytes(
+        &bytes,
+        office2pdf::config::Format::Pptx,
+        &office2pdf::config::ConvertOptions::default(),
+    )
+    .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
     if result.pdf.is_empty() {
         return Err(TummlerError::OfficeError(
             "office2pdf produced an empty PDF".into(),
@@ -80,26 +75,22 @@ fn pptx_to_pdf(input: &Path, output: &Path) -> Result<(), TummlerError> {
 fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
     let bytes = std::fs::read(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
     let pdf = Pdf::new(bytes).map_err(|e| TummlerError::OfficeError(e.to_string()))?;
-    let pages = pdf.pages();
-    let n = pages.len();
-    if n == 0 {
-        return Err(TummlerError::OfficeError("empty PDF".into()));
-    }
 
     let cache = RenderCache::new();
-    let interpreter = InterpreterSettings::default();
+    let interpreter_settings = InterpreterSettings::default();
     let render_settings = RenderSettings::default();
     let pixmap_settings = PixmapSettings {
         x_scale: 2.0,
         y_scale: 2.0,
-        bg_color: WHITE,
+        ..Default::default()
     };
 
-    let raster = |idx: usize, page| -> Result<(u32, u32, Vec<u8>), TummlerError> {
+    let mut images: Vec<(u32, u32, Vec<u8>)> = Vec::new();
+    for (idx, page) in pdf.pages().iter().enumerate() {
         let rendered = render(
             page,
             &cache,
-            &interpreter,
+            &interpreter_settings,
             &render_settings,
             &pixmap_settings,
         );
@@ -108,29 +99,12 @@ fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
         let png = rendered
             .into_png()
             .map_err(|e| TummlerError::OfficeError(format!("page {}: {e}", idx + 1)))?;
-        Ok((w, h, png))
-    };
-
-    let mut iter = pages.iter().enumerate();
-    let Some((_, first)) = iter.next() else {
-        return Err(TummlerError::OfficeError("empty PDF".into()));
-    };
-    let (w0, h0, png0) = raster(0, first)?;
-    let cx = px_to_emu(w0);
-    let cy = px_to_emu(h0);
-
-    let mut zip = start_pptx(output, n, cx, cy)?;
-    append_slide(&mut zip, 1, w0, h0, &png0, cx, cy)?;
-    drop(png0);
-
-    for (idx, page) in iter {
-        let (w, h, png) = raster(idx, page)?;
-        append_slide(&mut zip, idx + 1, w, h, &png, cx, cy)?;
+        images.push((w, h, png));
     }
-
-    zip.finish()
-        .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
-    Ok(())
+    if images.is_empty() {
+        return Err(TummlerError::OfficeError("empty PDF".into()));
+    }
+    write_image_pptx(&images, output)
 }
 
 /// 144 dpi (2× 72) → EMU.
