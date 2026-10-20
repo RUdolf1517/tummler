@@ -4,11 +4,13 @@ pub mod image;
 pub mod media;
 
 use crate::error::TummlerError;
-use crate::util::{classify_ext, normalize_ext, FormatKind, get_extension};
+use crate::util::{classify_ext, get_extension, normalize_ext, staging_path, FormatKind};
+use colored::Colorize;
 use std::path::Path;
 
-/// Главный диспетчер конвертации
-/// Определяет тип исходника и цели, роутит в нужный модуль
+/// Главный диспетчер конвертации.
+/// Пишет во временный файл рядом с целью и атомарно переименовывает,
+/// чтобы при ошибке не затереть уже существующий выход.
 pub fn convert_file(
     input: &Path,
     output: &Path,
@@ -22,13 +24,8 @@ pub fn convert_file(
     let target_ext = normalize_ext(target_ext);
     let target_kind = classify_ext(&target_ext);
 
-    // Определяем исходный формат (по расширению)
-    // Для картинок — можем также попробовать открыть файл, но пока по расширению
     let source_ext = get_extension(input).unwrap_or_default();
     let source_kind = if source_ext.is_empty() {
-        // Пытаемся угадать по mime или содержимому
-        // Для простоты — если не удалось, считаем что исходник может быть любым,
-        // главное что целевой формат известен
         FormatKind::Unknown
     } else {
         classify_ext(&source_ext)
@@ -47,7 +44,6 @@ pub fn convert_file(
         );
     }
 
-    // Проверка overwrite
     if output.exists() && !overwrite {
         return Err(TummlerError::Other(format!(
             "Файл уже существует: {} (используйте --overwrite)",
@@ -55,40 +51,50 @@ pub fn convert_file(
         )));
     }
 
-    // Создаем родительские директории
     if let Some(parent) = output.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             std::fs::create_dir_all(parent).map_err(|e| TummlerError::IoError(e.to_string()))?;
         }
     }
 
-    // Роутинг по целевому формату (важнее всего куда конвертируем)
-    // Но также учитываем что некоторые кросс-типы невозможны
-    match target_kind {
-        FormatKind::Image => {
-            // Картинка → картинка: нативно
-            // Видео → картинка (извлечь кадр): через ffmpeg — тоже поддержим
-            if source_kind == FormatKind::Media {
-                // извлекаем кадр через ffmpeg
-                media::convert_media(input, output, quality, ffmpeg_args, no_auto_install)
-            } else {
-                image::convert_image(input, output, quality)
+    let staging = staging_path(output);
+    if staging.exists() {
+        let _ = std::fs::remove_file(&staging);
+    }
+
+    let result = match target_kind {
+        FormatKind::Image => match source_kind {
+            FormatKind::Media | FormatKind::Document => {
+                media::convert_media(input, &staging, quality, ffmpeg_args, no_auto_install)
             }
-        }
+            FormatKind::Archive => Err(TummlerError::UnsupportedConversion(
+                source_ext,
+                target_ext.clone(),
+            )),
+            _ => image::convert_image(input, &staging, quality),
+        },
         FormatKind::Media => {
-            media::convert_media(input, output, quality, ffmpeg_args, no_auto_install)
+            media::convert_media(input, &staging, quality, ffmpeg_args, no_auto_install)
         }
-        FormatKind::Document => {
-            document::convert_document(input, output, no_auto_install)
+        FormatKind::Document => document::convert_document(input, &staging, no_auto_install),
+        FormatKind::Archive => archive::convert_archive(input, &staging),
+        FormatKind::Unknown => Err(TummlerError::UnsupportedFormat(target_ext.clone())),
+    };
+
+    match result {
+        Ok(()) => {
+            if let Err(e) = std::fs::rename(&staging, output) {
+                std::fs::copy(&staging, output).map_err(|e2| {
+                    let _ = std::fs::remove_file(&staging);
+                    TummlerError::IoError(format!("не удалось сохранить {}: {e}; {e2}", output.display()))
+                })?;
+                let _ = std::fs::remove_file(&staging);
+            }
+            Ok(())
         }
-        FormatKind::Archive => {
-            archive::convert_archive(input, output)
-        }
-        FormatKind::Unknown => {
-            Err(TummlerError::UnsupportedFormat(target_ext.clone()))
+        Err(e) => {
+            let _ = std::fs::remove_file(&staging);
+            Err(e)
         }
     }
 }
-
-// Для colored dimmed в verbose
-use colored::Colorize;

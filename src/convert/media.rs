@@ -1,5 +1,6 @@
 use crate::deps;
 use crate::error::TummlerError;
+use crate::util::normalize_ext;
 use std::path::Path;
 use std::process::Command;
 
@@ -11,39 +12,37 @@ pub fn convert_media(
     ffmpeg_args: Option<&str>,
     no_auto_install: bool,
 ) -> Result<(), TummlerError> {
-    // Проверяем ffmpeg
     deps::ensure_available("ffmpeg", no_auto_install)
         .map_err(|e| TummlerError::DependencyMissing("ffmpeg".into(), e))?;
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.arg("-i").arg(input);
-    cmd.arg("-y"); // overwrite (мы уже проверили --overwrite, но ffmpeg должен перезаписать)
+    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"]);
+    cmd.arg(input);
 
-    // Качество
-    if let Some(q) = quality {
+    let out_ext = output
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(normalize_ext)
+        .unwrap_or_default();
+
+    if out_ext == "gif" && ffmpeg_args.is_none() {
+        cmd.args([
+            "-vf",
+            "fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
+            "-loop",
+            "0",
+        ]);
+    } else if let Some(q) = quality {
         let q = q.clamp(1, 100);
-        // Для видео: crf — обратная шкала, 0 лучшее, 51 худшее
-        // Формула: crf = (100 - q) * 51 / 100
-        // q=90 → crf=5, q=80 → crf=10, q=50 → crf=25
-        let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
-        // Применяем только для видеоформатов
-        let out_ext = output
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
         let is_video = matches!(
             out_ext.as_str(),
-            "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp" | "gif" | "m4v"
+            "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp"
+                | "gif" | "m4v"
         );
         if is_video {
-            // Для gif — особые настройки
-            if out_ext == "gif" {
-                // gif не использует crf, но можно scale
-                // оставляем дефолт ffmpeg
-            } else {
+            if out_ext != "gif" {
+                let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
                 cmd.arg("-crf").arg(crf.to_string());
-                // preset для баланса скорости/качества
                 if q >= 80 {
                     cmd.arg("-preset").arg("slow");
                 } else {
@@ -51,8 +50,6 @@ pub fn convert_media(
                 }
             }
         } else {
-            // Аудио: битрейт
-            // q 90 → 320k, q 50 → 128k, q 10 → 32k
             let bitrate = match q {
                 90..=100 => "320k",
                 80..=89 => "256k",
@@ -65,16 +62,22 @@ pub fn convert_media(
         }
     }
 
-    // Дополнительные аргументы пользователя
     if let Some(extra) = ffmpeg_args {
-        for arg in shell_words::split(extra).unwrap_or_else(|_| extra.split_whitespace().map(|s| s.to_string()).collect()) {
-            cmd.arg(arg);
+        match shell_words::split(extra) {
+            Ok(args) => {
+                for arg in args {
+                    cmd.arg(arg);
+                }
+            }
+            Err(e) => return Err(TummlerError::MediaError(e)),
         }
     }
 
     cmd.arg(output);
 
-    let output_result = cmd.output().map_err(|e| TummlerError::MediaError(e.to_string()))?;
+    let output_result = cmd
+        .output()
+        .map_err(|e| TummlerError::MediaError(e.to_string()))?;
 
     if !output_result.status.success() {
         let stderr = String::from_utf8_lossy(&output_result.stderr);
@@ -90,12 +93,8 @@ pub fn convert_media(
     Ok(())
 }
 
-// Простой парсер shell-аргументов без зависимости shell-words (фолбэк)
-// Если shell-words не доступен, используем split_whitespace
-// Добавим опциональную зависимость если нужно, но пока делаем просто
 mod shell_words {
     pub fn split(input: &str) -> Result<Vec<String>, String> {
-        // Минимальный парсер с поддержкой кавычек
         let mut result = Vec::new();
         let mut current = String::new();
         let mut in_single = false;
@@ -120,8 +119,7 @@ mod shell_words {
                 }
                 ' ' | '\t' | '\n' if !in_single && !in_double => {
                     if !current.is_empty() {
-                        result.push(current.clone());
-                        current.clear();
+                        result.push(std::mem::take(&mut current));
                     }
                 }
                 _ => current.push(c),
@@ -134,5 +132,31 @@ mod shell_words {
             result.push(current);
         }
         Ok(result)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn splits_plain() {
+            assert_eq!(
+                split("-crf 23 -preset fast").unwrap(),
+                vec!["-crf", "23", "-preset", "fast"]
+            );
+        }
+
+        #[test]
+        fn splits_quotes() {
+            assert_eq!(
+                split(r#"-vf "scale=1280:720" -an"#).unwrap(),
+                vec!["-vf", "scale=1280:720", "-an"]
+            );
+        }
+
+        #[test]
+        fn rejects_unclosed() {
+            assert!(split(r#"-vf "scale"#).is_err());
+        }
     }
 }

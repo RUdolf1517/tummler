@@ -38,9 +38,3 @@ impl From<std::io::Error> for TummlerError {
         Self::IoError(e.to_string())
     }
 }
-
-impl From<anyhow::Error> for TummlerError {
-    fn from(e: anyhow::Error) -> Self {
-        Self::Other(e.to_string())
-    }
-}

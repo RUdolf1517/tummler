@@ -43,6 +43,13 @@ tummler --help
 
 ### Из исходников
 
+На Linux понадобятся заголовки сжатия:
+
+```bash
+# Debian/Ubuntu
+sudo apt install pkg-config liblzma-dev libbz2-dev cmake
+```
+
 ```bash
 git clone https://github.com/RUdolf1517/tummler
 cd tummler
@@ -70,6 +77,7 @@ tummler <INPUT>... -<EXT> [ОПЦИИ]
       --check-deps          Проверить внешние зависимости
       --no-auto-install     Не предлагать автоустановку, только подсказка
       --ffmpeg-args <ARGS>  Доп. аргументы для ffmpeg: "-crf 23 -preset fast"
+      --completions <SHELL> Скрипт автодополнения: bash, zsh, fish, powershell, elvish
   -h, --help                Справка
   -V, --version             Версия
 ```
@@ -85,7 +93,8 @@ tummler video.mp4 -mp3            # извлечь аудио
 tummler archive.zip -tar.gz       # перепаковка
 ```
 
-Работает с любым расширением: `-jpeg`, `-webp`, `-pdf`, `-tar.gz` и т.д. Можно и классически:
+Работает с любым расширением: `-jpeg`, `-webp`, `-pdf`, `-tar.gz` и т.д.
+`-jpeg` пишет `.jpeg`, `-jpg` пишет `.jpg`. Можно и классически:
 
 ```bash
 tummler image.png --format jpeg
@@ -174,6 +183,23 @@ tummler video.mp4 -gif --no-auto-install
 tummler --check-deps   # только проверить
 ```
 
+Автоустановка спрашивает подтверждение только в интерактивном терминале (TTY). В скриптах и CI tummler не будет запускать `sudo apt` сам.
+
+## Автодополнение
+
+```bash
+# bash
+tummler --completions bash | sudo tee /etc/bash_completion.d/tummler
+
+# zsh
+mkdir -p ~/.zfunc
+tummler --completions zsh > ~/.zfunc/_tummler
+# в ~/.zshrc: fpath+=~/.zfunc && autoload -Uz compinit && compinit
+
+# fish
+tummler --completions fish > ~/.config/fish/completions/tummler.fish
+```
+
 Ручная проверка:
 
 ```bash
@@ -190,7 +216,7 @@ tummler --check-deps
 ```bash
 # Картинки
 tummler screenshot.png -jpeg -q 85 -o compressed.jpg
-tummler logo.svg -png                    # через ffmpeg/imagemagick fallback
+tummler logo.png -ico
 tummler ./wallpapers -avif -r -o ./avif
 
 # Видео/аудио

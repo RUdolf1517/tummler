@@ -1,10 +1,26 @@
 use std::path::{Path, PathBuf};
 
-/// Нормализация расширения: lowercase, без точки, алиасы
+/// Нормализация расширения для классификации: lowercase, без точки, алиасы.
 pub fn normalize_ext(ext: &str) -> String {
     let ext = ext.trim().trim_start_matches('.').to_lowercase();
     match ext.as_str() {
-        "jpeg" => "jpg".to_string(),
+        "jpeg" | "jpe" | "jfif" => "jpg".to_string(),
+        "tif" => "tiff".to_string(),
+        "htm" => "html".to_string(),
+        "markdown" => "md".to_string(),
+        "tgz" => "tar.gz".to_string(),
+        "tbz" | "tbz2" => "tar.bz2".to_string(),
+        "txz" => "tar.xz".to_string(),
+        _ => ext,
+    }
+}
+
+/// Расширение для имени выходного файла.
+/// Сохраняем форму, которую указал пользователь: `-jpeg` → `.jpeg`, не `.jpg`.
+/// Схлопываем только настоящие алиасы (`tgz` → `tar.gz`).
+pub fn output_extension(ext: &str) -> String {
+    let ext = ext.trim().trim_start_matches('.').to_lowercase();
+    match ext.as_str() {
         "jpe" | "jfif" => "jpg".to_string(),
         "tif" => "tiff".to_string(),
         "htm" => "html".to_string(),
@@ -12,14 +28,12 @@ pub fn normalize_ext(ext: &str) -> String {
         "tgz" => "tar.gz".to_string(),
         "tbz" | "tbz2" => "tar.bz2".to_string(),
         "txz" => "tar.xz".to_string(),
-        "aiff" => "aiff".to_string(),
         _ => ext,
     }
 }
 
-/// Получить расширение файла (нормализованное)
+/// Получить расширение файла (нормализованное для классификации).
 pub fn get_extension(path: &Path) -> Option<String> {
-    // Особый случай: .tar.gz, .tar.bz2, .tar.xz — двойное расширение
     let file_name = path.file_name()?.to_string_lossy().to_lowercase();
     for double in &["tar.gz", "tar.bz2", "tar.xz", "tar.zst"] {
         if file_name.ends_with(&format!(".{double}")) {
@@ -29,6 +43,20 @@ pub fn get_extension(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|e| e.to_str())
         .map(normalize_ext)
+}
+
+/// Временный путь рядом с финальным, с тем же расширением
+/// (`photo.jpeg` → `.tummler-tmp-photo.jpeg`).
+pub fn staging_path(output: &Path) -> PathBuf {
+    let parent = output
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = output
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+    parent.join(format!(".tummler-tmp-{name}"))
 }
 
 /// Группы форматов
@@ -43,26 +71,20 @@ pub enum FormatKind {
 
 pub fn classify_ext(ext: &str) -> FormatKind {
     let ext = normalize_ext(ext);
-    let ext = ext.as_str();
-    match ext {
-        // Images (image crate)
+    match ext.as_str() {
         "png" | "jpg" | "jpeg" | "gif" | "bmp" | "ico" | "tiff" | "tif"
         | "webp" | "avif" | "pnm" | "pbm" | "pgm" | "ppm" | "tga" | "dds"
         | "hdr" | "farbfeld" | "ff" | "qoi" | "exr" | "openexr" => FormatKind::Image,
 
-        // Media (ffmpeg)
         "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg"
         | "3gp" | "m4v" | "ts" | "mts" | "m2ts" | "mxf" | "asf" | "rm" | "rmvb"
         | "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "opus" | "wma"
-        | "aiff" | "aif" | "alac" | "ac3" | "dts" | "amr" | "au" | "ra"
-        | "webm-audio" => FormatKind::Media,
+        | "aiff" | "aif" | "alac" | "ac3" | "dts" | "amr" | "au" | "ra" => FormatKind::Media,
 
-        // Documents (pandoc)
         "pdf" | "docx" | "odt" | "html" | "htm" | "md" | "markdown" | "tex"
         | "rst" | "epub" | "pptx" | "ppt" | "csv" | "json" | "txt" | "rtf"
         | "org" | "adoc" | "djvu" | "fb2" => FormatKind::Document,
 
-        // Archives (native)
         "zip" | "tar" | "tar.gz" | "tgz" | "tar.bz2" | "tar.xz" | "gz" | "bz2"
         | "xz" | "zst" | "tar.zst" => FormatKind::Archive,
 
@@ -70,82 +92,62 @@ pub fn classify_ext(ext: &str) -> FormatKind {
     }
 }
 
-/// Проверить поддерживается ли конвертация в данный формат (как целевой)
 pub fn is_supported_output(ext: &str) -> bool {
     classify_ext(ext) != FormatKind::Unknown
 }
 
-/// Вычислить выходной путь
-/// 
-/// Логика:
-/// - Если указан `-o` и это существующая директория или путь заканчивается на `/` → директория
-/// - Если `-o` указан и это файл (или не существует но parent — директория) → конкретный файл (только для одиночного входа)
-/// - Если несколько входов и `-o` — файл → ошибка (нужна директория)
-/// - Если нет `-o` → рядом с исходником, то же имя + новое расширение
+/// Вычислить выходной путь.
+///
+/// - `-o` существующая директория / путь с `/` на конце / несколько входов → директория
+/// - `-o` файл при одном входе → конкретный файл
+/// - без `-o` → рядом с исходником, то же имя + новое расширение
 pub fn resolve_output_path(
     input: &Path,
     target_ext: &str,
     output_arg: Option<&Path>,
     multiple_inputs: bool,
 ) -> Result<PathBuf, String> {
-    let target_ext = normalize_ext(target_ext);
-    let target_ext_with_dot = if target_ext.contains('.') {
-        format!(".{target_ext}")
-    } else {
-        format!(".{target_ext}")
-    };
+    let target_ext = output_extension(target_ext);
+    let target_ext_with_dot = format!(".{target_ext}");
 
     if let Some(out) = output_arg {
-        // Проверяем: это директория?
-        // - Если путь существует и это директория
-        // - Если путь заканчивается на / или \
-        // - Если несколько входов → считаем директорией
         let is_dir_hint = out.to_string_lossy().ends_with('/')
             || out.to_string_lossy().ends_with('\\')
             || (out.exists() && out.is_dir())
             || multiple_inputs;
 
-        if is_dir_hint || (multiple_inputs && !out.exists()) {
-            // Создадим директорию если нужно
-            // out — директория, кладем файл туда
-            let file_stem = input
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("output");
-            // Для .tar.gz нужно убрать двойное расширение исходника при получении stem
-            let stem = strip_double_ext_stem(input).unwrap_or_else(|| file_stem.to_string());
+        if is_dir_hint {
+            let stem = strip_double_ext_stem(input).unwrap_or_else(|| {
+                input
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("output")
+                    .to_string()
+            });
             return Ok(out.join(format!("{stem}{target_ext_with_dot}")));
-        } else {
-            // Одиночный файл → out как есть
-            // Если у out нет расширения или оно не совпадает — добавим/заменим
-            // Но если пользователь явно указал путь, уважаем его
-            // Если расширение у out совпадает с target — ок, иначе добавляем
-            if let Some(out_ext) = get_extension(out) {
-                if normalize_ext(&out_ext) == target_ext {
-                    return Ok(out.to_path_buf());
-                }
-            }
-            // Если у out нет расширения — добавляем
-            if out.extension().is_none() && !target_ext.contains('.') {
-                let mut p = out.as_os_str().to_os_string();
-                p.push(target_ext_with_dot);
-                return Ok(PathBuf::from(p));
-            }
-            // Иначе — считаем что пользователь указал полный путь (даже если расширение другое, но это странно)
-            // Для безопасности — если расширение не совпадает, заменим
-            let parent = out.parent();
-            let stem = out.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
-            if let Some(parent) = parent {
-                if parent.as_os_str().is_empty() {
-                    return Ok(PathBuf::from(format!("{stem}{target_ext_with_dot}")));
-                }
-                return Ok(parent.join(format!("{stem}{target_ext_with_dot}")));
-            }
-            return Ok(out.to_path_buf());
         }
+
+        if let Some(out_ext) = get_extension(out) {
+            if normalize_ext(&out_ext) == normalize_ext(&target_ext) {
+                return Ok(out.to_path_buf());
+            }
+        }
+        if out.extension().is_none() && !target_ext.contains('.') {
+            let mut p = out.as_os_str().to_os_string();
+            p.push(&target_ext_with_dot);
+            return Ok(PathBuf::from(p));
+        }
+        let parent = out.parent();
+        let stem = out.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        if let Some(parent) = parent {
+            if parent.as_os_str().is_empty() {
+                return Ok(PathBuf::from(format!("{stem}{target_ext_with_dot}")));
+            }
+            return Ok(parent.join(format!("{stem}{target_ext_with_dot}")));
+        }
+        return Ok(out.to_path_buf());
     }
 
-    // Нет -o → рядом с исходником
     let parent = input.parent().unwrap_or_else(|| Path::new("."));
     let stem = strip_double_ext_stem(input).unwrap_or_else(|| {
         input
@@ -158,18 +160,19 @@ pub fn resolve_output_path(
 }
 
 fn strip_double_ext_stem(path: &Path) -> Option<String> {
-    let file_name = path.file_name()?.to_string_lossy().to_lowercase();
+    let file_name = path.file_name()?.to_string_lossy();
+    let lower = file_name.to_lowercase();
     for double in &["tar.gz", "tar.bz2", "tar.xz", "tar.zst"] {
-        if file_name.ends_with(&format!(".{double}")) {
-            let stem = &file_name[..file_name.len() - double.len() - 1];
+        let suffix = format!(".{double}");
+        if lower.ends_with(&suffix) {
+            let stem = &file_name[..file_name.len() - suffix.len()];
             return Some(stem.to_string());
         }
     }
     None
 }
 
-/// Собрать список файлов для конвертации из inputs
-/// Поддерживает файлы и директории (с опциональной рекурсией)
+/// Собрать список файлов для конвертации из inputs.
 pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for input in inputs {
@@ -182,45 +185,57 @@ pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
                         files.push(entry.path().to_path_buf());
                     }
                 }
-            } else {
-                if let Ok(read_dir) = std::fs::read_dir(input) {
-                    for entry in read_dir.filter_map(|e| e.ok()) {
-                        let path = entry.path();
-                        if path.is_file() {
-                            files.push(path);
-                        }
+            } else if let Ok(read_dir) = std::fs::read_dir(input) {
+                for entry in read_dir.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.is_file() {
+                        files.push(path);
                     }
                 }
             }
         } else {
-            // Не существует — добавим как есть, ошибка будет позже
             files.push(input.clone());
         }
     }
     files
 }
 
-/// Красивый список форматов для --list-formats
 pub fn print_supported_formats() {
     use colored::Colorize;
     println!("{}", "Поддерживаемые форматы tummler:".bold());
     println!();
 
     println!("  {} {}", "🖼  Картинки".bold(), "(нативно, без зависимостей)".dimmed());
-    println!("     {}", "png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, pnm, tga, dds, hdr, farbfeld, qoi".cyan());
+    println!(
+        "     {}",
+        "png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, pnm, tga, dds, hdr, farbfeld, qoi, exr"
+            .cyan()
+    );
     println!();
 
     println!("  {} {}", "🎬  Аудио/Видео".bold(), "(требует ffmpeg)".dimmed());
-    println!("     {}", "mp4, avi, mkv, mov, webm, flv, wmv, mpg, 3gp, m4v, ts".cyan());
-    println!("     {}", "mp3, wav, flac, aac, ogg, m4a, opus, wma, aiff, alac".cyan());
+    println!(
+        "     {}",
+        "mp4, avi, mkv, mov, webm, flv, wmv, mpg, 3gp, m4v, ts, gif (из видео)".cyan()
+    );
+    println!(
+        "     {}",
+        "mp3, wav, flac, aac, ogg, m4a, opus, wma, aiff, alac".cyan()
+    );
     println!();
 
     println!("  {} {}", "📄  Документы".bold(), "(требует pandoc)".dimmed());
-    println!("     {}", "pdf, docx, odt, html, md, tex, rst, epub, pptx, csv, json, txt, rtf".cyan());
+    println!(
+        "     {}",
+        "pdf, docx, odt, html, md, tex, rst, epub, pptx, csv, json, txt, rtf".cyan()
+    );
     println!();
 
     println!("  {} {}", "📦  Архивы".bold(), "(нативно)".dimmed());
-    println!("     {}", "zip, tar, tar.gz/tgz, tar.bz2, tar.xz, gz, bz2, xz, zst".cyan());
+    println!(
+        "     {}",
+        "zip, tar, tar.gz/tgz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst".cyan()
+    );
     println!();
 
     println!("{}", "Примеры:".dimmed());
@@ -228,7 +243,11 @@ pub fn print_supported_formats() {
     println!("  {}  {}", "tummler video.mp4 -webm -q 80".dimmed(), "→ video.webm".dimmed());
     println!("  {}  {}", "tummler doc.docx -pdf".dimmed(), "→ doc.pdf".dimmed());
     println!("  {}  {}", "tummler archive.zip -tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
-    println!("  {}  {}", "tummler ./photos -webp -r -o ./out".dimmed(), "→ батч + рекурсия".dimmed());
+    println!(
+        "  {}  {}",
+        "tummler ./photos -webp -r -o ./out".dimmed(),
+        "→ батч + рекурсия".dimmed()
+    );
 }
 
 #[cfg(test)]
@@ -241,14 +260,26 @@ mod tests {
         assert_eq!(normalize_ext("JPEG"), "jpg");
         assert_eq!(normalize_ext(".png"), "png");
         assert_eq!(normalize_ext("TGZ"), "tar.gz");
+        assert_eq!(normalize_ext("jfif"), "jpg");
+    }
+
+    #[test]
+    fn test_output_extension_preserves_jpeg() {
+        assert_eq!(output_extension("jpeg"), "jpeg");
+        assert_eq!(output_extension("JPEG"), "jpeg");
+        assert_eq!(output_extension(".jpg"), "jpg");
+        assert_eq!(output_extension("tgz"), "tar.gz");
+        assert_eq!(output_extension("webp"), "webp");
     }
 
     #[test]
     fn test_classify() {
         assert_eq!(classify_ext("png"), FormatKind::Image);
+        assert_eq!(classify_ext("jpeg"), FormatKind::Image);
         assert_eq!(classify_ext("mp4"), FormatKind::Media);
         assert_eq!(classify_ext("pdf"), FormatKind::Document);
         assert_eq!(classify_ext("zip"), FormatKind::Archive);
+        assert_eq!(classify_ext("xyz"), FormatKind::Unknown);
     }
 
     #[test]
@@ -259,9 +290,45 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_jpeg_keeps_jpeg() {
+        let input = Path::new("/tmp/photo.png");
+        let out = resolve_output_path(input, "jpeg", None, false).unwrap();
+        assert_eq!(out, Path::new("/tmp/photo.jpeg"));
+    }
+
+    #[test]
     fn test_resolve_with_dir() {
         let input = Path::new("/tmp/a.png");
         let out = resolve_output_path(input, "webp", Some(Path::new("/out")), true).unwrap();
         assert_eq!(out, Path::new("/out/a.webp"));
+    }
+
+    #[test]
+    fn test_resolve_tar_gz_stem() {
+        let input = Path::new("/tmp/Archive.TAR.GZ");
+        let out = resolve_output_path(input, "zip", None, false).unwrap();
+        assert_eq!(out, Path::new("/tmp/Archive.zip"));
+    }
+
+    #[test]
+    fn test_staging_path_keeps_extension() {
+        let p = Path::new("/tmp/photo.jpeg");
+        let s = staging_path(p);
+        assert_eq!(s, Path::new("/tmp/.tummler-tmp-photo.jpeg"));
+        assert_eq!(get_extension(&s).as_deref(), Some("jpg"));
+
+        let p = Path::new("/tmp/archive.tar.gz");
+        let s = staging_path(p);
+        assert_eq!(s, Path::new("/tmp/.tummler-tmp-archive.tar.gz"));
+        assert_eq!(get_extension(&s).as_deref(), Some("tar.gz"));
+    }
+
+    #[test]
+    fn test_get_extension_double() {
+        assert_eq!(
+            get_extension(Path::new("a.tar.gz")).as_deref(),
+            Some("tar.gz")
+        );
+        assert_eq!(get_extension(Path::new("a.PNG")).as_deref(), Some("png"));
     }
 }

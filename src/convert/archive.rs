@@ -1,21 +1,34 @@
 use crate::error::TummlerError;
 use crate::util::{get_extension, normalize_ext};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-/// Конвертация архивов (перепаковка)
+fn is_archive_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "zip" | "tar" | "tar.gz" | "tar.bz2" | "tar.xz" | "tar.zst" | "gz" | "bz2" | "xz" | "zst"
+    )
+}
+
+/// Конвертация архивов (перепаковка) и сжатие обычных файлов.
 ///
 /// Поддерживает: zip, tar, tar.gz/tgz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst
-/// Логика:
-/// - Распаковываем исходный архив во временную директорию
-/// - Запаковываем в целевой формат
+/// - Архив → архив: распаковать во временную директорию и запаковать заново
+/// - Обычный файл → gz/zip/tar.*: сжать / упаковать один файл
 pub fn convert_archive(input: &Path, output: &Path) -> Result<(), TummlerError> {
-    let input_ext = get_extension(input).unwrap_or_default();
-    let output_ext = get_extension(output).unwrap_or_default();
+    let input_ext = normalize_ext(&get_extension(input).unwrap_or_default());
+    let output_ext = normalize_ext(&get_extension(output).unwrap_or_default());
 
-    let input_ext = normalize_ext(&input_ext);
-    let output_ext = normalize_ext(&output_ext);
+    if !is_archive_ext(&output_ext) {
+        return Err(TummlerError::ArchiveError(format!(
+            "Неподдерживаемый целевой формат архива: {output_ext}"
+        )));
+    }
+
+    if !is_archive_ext(&input_ext) {
+        return pack_plain_file(input, output, &output_ext);
+    }
 
     if input_ext == output_ext {
         return Err(TummlerError::Other(format!(
@@ -54,6 +67,80 @@ fn unpack_archive(input: &Path, ext: &str, dest: &Path) -> Result<(), TummlerErr
     }
 }
 
+fn pack_plain_file(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerError> {
+    match ext {
+        "gz" | "bz2" | "xz" | "zst" => compress_file(input, output, ext),
+        "zip" | "tar" | "tar.gz" | "tar.bz2" | "tar.xz" | "tar.zst" => {
+            let temp_dir = tempfile::tempdir().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            let name = input.file_name().unwrap_or_else(|| std::ffi::OsStr::new("file"));
+            let dest = temp_dir.path().join(name);
+            std::fs::copy(input, &dest).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            pack_archive(temp_dir.path(), output, ext)
+        }
+        _ => Err(TummlerError::ArchiveError(format!(
+            "Неподдерживаемый целевой формат архива: {ext}"
+        ))),
+    }
+}
+
+fn compress_file(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerError> {
+    let mut input_file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let output_file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    match ext {
+        "gz" => {
+            let mut enc = flate2::write::GzEncoder::new(output_file, flate2::Compression::default());
+            io::copy(&mut input_file, &mut enc).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            enc.finish().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "bz2" => {
+            let mut enc = bzip2::write::BzEncoder::new(output_file, bzip2::Compression::default());
+            io::copy(&mut input_file, &mut enc).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            enc.finish().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "xz" => {
+            let mut enc = xz2::write::XzEncoder::new(output_file, 6);
+            io::copy(&mut input_file, &mut enc).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            enc.finish().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "zst" => {
+            let mut enc = zstd::stream::write::Encoder::new(output_file, 3)
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            io::copy(&mut input_file, &mut enc).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            enc.finish().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        _ => {
+            return Err(TummlerError::ArchiveError(format!(
+                "Неподдерживаемый кодек сжатия: {ext}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn single_file_in(src_dir: &Path, ext: &str) -> Result<PathBuf, TummlerError> {
+    let mut files: Vec<PathBuf> = Vec::new();
+    collect_files_recursive(src_dir, &mut files);
+    let files: Vec<_> = files.into_iter().filter(|p| p.is_file()).collect();
+    if files.is_empty() {
+        return Err(TummlerError::ArchiveError(format!(
+            "Нет файлов для сжатия в .{ext}"
+        )));
+    }
+    if files.len() > 1 {
+        let hint = match ext {
+            "gz" => "tar.gz",
+            "bz2" => "tar.bz2",
+            "xz" => "tar.xz",
+            "zst" => "tar.zst",
+            other => other,
+        };
+        return Err(TummlerError::ArchiveError(format!(
+            "Формат .{ext} поддерживает только один файл. Используйте .{hint} для нескольких файлов."
+        )));
+    }
+    Ok(files.into_iter().next().unwrap())
+}
+
 fn pack_archive(src_dir: &Path, output: &Path, ext: &str) -> Result<(), TummlerError> {
     match ext {
         "zip" => pack_zip(src_dir, output),
@@ -80,7 +167,10 @@ fn unpack_zip(input: &Path, dest: &Path) -> Result<(), TummlerError> {
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-        let out_path = dest.join(file.name());
+        let Some(enclosed) = file.enclosed_name() else {
+            continue;
+        };
+        let out_path = dest.join(enclosed);
 
         if file.is_dir() {
             std::fs::create_dir_all(&out_path).map_err(|e| TummlerError::IoError(e.to_string()))?;
@@ -263,89 +353,23 @@ fn pack_tar_zst(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
 }
 
 fn pack_gz(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
-    let mut files: Vec<PathBuf> = Vec::new();
-    collect_files_recursive(src_dir, &mut files);
-    let files: Vec<_> = files.into_iter().filter(|p| p.is_file()).collect();
-
-    if files.is_empty() {
-        return Err(TummlerError::ArchiveError("Нет файлов для сжатия в .gz".into()));
-    }
-    if files.len() > 1 {
-        return Err(TummlerError::ArchiveError(
-            "Формат .gz поддерживает только один файл. Используйте .tar.gz для нескольких файлов.".into(),
-        ));
-    }
-
-    let input_file = File::open(&files[0]).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let output_file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let mut gz = flate2::write::GzEncoder::new(output_file, flate2::Compression::default());
-    let mut reader = io::BufReader::new(input_file);
-    io::copy(&mut reader, &mut gz).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    gz.finish().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    Ok(())
+    let file = single_file_in(src_dir, "gz")?;
+    compress_file(&file, output, "gz")
 }
 
 fn pack_bz2(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
-    let mut files: Vec<PathBuf> = Vec::new();
-    collect_files_recursive(src_dir, &mut files);
-    let files: Vec<_> = files.into_iter().filter(|p| p.is_file()).collect();
-    if files.is_empty() {
-        return Err(TummlerError::ArchiveError("Нет файлов для сжатия в .bz2".into()));
-    }
-    if files.len() > 1 {
-        return Err(TummlerError::ArchiveError(
-            "Формат .bz2 поддерживает только один файл. Используйте .tar.bz2 для нескольких файлов.".into(),
-        ));
-    }
-    let input_file = File::open(&files[0]).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let output_file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let mut bz = bzip2::write::BzEncoder::new(output_file, bzip2::Compression::default());
-    let mut reader = io::BufReader::new(input_file);
-    io::copy(&mut reader, &mut bz).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    bz.finish().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    Ok(())
+    let file = single_file_in(src_dir, "bz2")?;
+    compress_file(&file, output, "bz2")
 }
 
 fn pack_xz(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
-    let mut files: Vec<PathBuf> = Vec::new();
-    collect_files_recursive(src_dir, &mut files);
-    let files: Vec<_> = files.into_iter().filter(|p| p.is_file()).collect();
-    if files.is_empty() {
-        return Err(TummlerError::ArchiveError("Нет файлов для сжатия в .xz".into()));
-    }
-    if files.len() > 1 {
-        return Err(TummlerError::ArchiveError(
-            "Формат .xz поддерживает только один файл. Используйте .tar.xz для нескольких файлов.".into(),
-        ));
-    }
-    let input_file = File::open(&files[0]).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let output_file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let mut xz = xz2::write::XzEncoder::new(output_file, 6);
-    let mut reader = io::BufReader::new(input_file);
-    io::copy(&mut reader, &mut xz).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    xz.finish().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    Ok(())
+    let file = single_file_in(src_dir, "xz")?;
+    compress_file(&file, output, "xz")
 }
 
 fn pack_zst(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
-    let mut files: Vec<PathBuf> = Vec::new();
-    collect_files_recursive(src_dir, &mut files);
-    let files: Vec<_> = files.into_iter().filter(|p| p.is_file()).collect();
-    if files.is_empty() {
-        return Err(TummlerError::ArchiveError("Нет файлов для сжатия в .zst".into()));
-    }
-    if files.len() > 1 {
-        return Err(TummlerError::ArchiveError(
-            "Формат .zst поддерживает только один файл. Используйте .tar.zst для нескольких файлов.".into(),
-        ));
-    }
-    let input_file = File::open(&files[0]).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let output_file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let mut enc = zstd::stream::write::Encoder::new(output_file, 3).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    let mut reader = io::BufReader::new(input_file);
-    io::copy(&mut reader, &mut enc).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    enc.finish().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-    Ok(())
+    let file = single_file_in(src_dir, "zst")?;
+    compress_file(&file, output, "zst")
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -379,4 +403,41 @@ fn append_dir_to_tar<W: Write>(builder: &mut tar::Builder<W>, src_dir: &Path, ba
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compress_plain_file_to_gz_and_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("hello.txt");
+        let payload = b"hello world hello world hello world";
+        std::fs::write(&input, payload).unwrap();
+        let gz = dir.path().join("hello.txt.gz");
+        convert_archive(&input, &gz).unwrap();
+        assert!(gz.exists());
+        assert!(gz.metadata().unwrap().len() > 0);
+
+        let unpacked = tempfile::tempdir().unwrap();
+        unpack_gz(&gz, unpacked.path()).unwrap();
+        let restored = std::fs::read(unpacked.path().join("hello.txt")).unwrap();
+        assert_eq!(restored, payload);
+    }
+
+    #[test]
+    fn plain_file_to_zip() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("note.txt");
+        std::fs::write(&input, b"zip me").unwrap();
+        let zip_path = dir.path().join("note.zip");
+        convert_archive(&input, &zip_path).unwrap();
+        assert!(zip_path.exists());
+
+        let unpacked = tempfile::tempdir().unwrap();
+        unpack_zip(&zip_path, unpacked.path()).unwrap();
+        let restored = std::fs::read(unpacked.path().join("note.txt")).unwrap();
+        assert_eq!(restored, b"zip me");
+    }
 }

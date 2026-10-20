@@ -10,90 +10,55 @@ pub fn convert_image(input: &Path, output: &Path, quality: Option<u8>) -> Result
         .map(normalize_ext)
         .unwrap_or_default();
 
-    // Для .tar.gz и т.п. — это не картинка, но сюда не должны попасть
-    // Проверяем что output_ext — картинка
     let img = image::open(input).map_err(|e| TummlerError::ImageError(e.to_string()))?;
 
-    // Определяем формат вывода
-    // image crate определяет по расширению, но для контроля качества нужно явно
     match output_ext.as_str() {
         "jpg" | "jpeg" => {
-            // JPEG с качеством
             let q = quality.unwrap_or(90).clamp(1, 100);
-            // Сохраняем через JpegEncoder с качеством
-            let file = std::fs::File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
-            let mut writer = std::io::BufWriter::new(file);
-            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, q);
-            encoder
-                .encode_image(&img)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "png" => {
-            // PNG — lossless, качество игнорируется (но можно использовать compression)
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "gif" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "bmp" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "ico" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "tiff" | "tif" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "webp" => {
-            // WebP — image crate поддерживает через webp feature
-            // Качество для WebP тоже можно, но image 0.25 не дает прямого контроля качества WebP через save
-            // Используем save, качество игнорируется в пользу дефолта (можно улучшить кастомным энкодером)
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "avif" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "pnm" | "pbm" | "pgm" | "ppm" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "tga" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "hdr" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "qoi" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "farbfeld" | "ff" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "dds" => {
-            img.save(output)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        }
-        "exr" | "openexr" => {
-            img.save(output)
+            let file = std::fs::File::create(output)
+                .map_err(|e| TummlerError::IoError(e.to_string()))?;
+            let writer = std::io::BufWriter::new(file);
+            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(writer, q);
+            img.write_with_encoder(encoder)
                 .map_err(|e| TummlerError::ImageError(e.to_string()))?;
         }
         _ => {
-            // Попытка сохранить — image crate может угадать по расширению
+            // PNG/GIF/WebP/AVIF и остальные — image crate определяет формат по расширению.
+            // WebP в image 0.25 — lossless, `-q` на него не влияет.
             img.save(output)
-                .map_err(|e| TummlerError::ImageError(format!("Неподдерживаемый формат вывода {output_ext}: {e}")))?;
+                .map_err(|e| TummlerError::ImageError(format!("Не удалось сохранить {output_ext}: {e}")))?;
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn png_to_jpeg() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.png");
+        let output = dir.path().join("a.jpeg");
+        image::RgbImage::new(8, 8).save(&input).unwrap();
+        convert_image(&input, &output, Some(80)).unwrap();
+        assert!(output.exists());
+        assert!(output.metadata().unwrap().len() > 0);
+        let decoded = image::open(&output).unwrap();
+        assert_eq!(decoded.width(), 8);
+        assert_eq!(decoded.height(), 8);
+    }
+
+    #[test]
+    fn png_to_bmp_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.png");
+        let output = dir.path().join("a.bmp");
+        image::RgbImage::new(4, 4).save(&input).unwrap();
+        convert_image(&input, &output, None).unwrap();
+        let decoded = image::open(&output).unwrap();
+        assert_eq!(decoded.width(), 4);
+    }
 }

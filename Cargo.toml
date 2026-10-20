@@ -6,9 +6,10 @@ description = "Универсальный конвертер файлов — к
 authors = ["RUdolf1517"]
 license = "MIT"
 repository = "https://github.com/RUdolf1517/tummler"
+readme = "README.md"
 keywords = ["cli", "converter", "ffmpeg", "image", "transcode"]
 categories = ["command-line-utilities", "multimedia"]
-rust-version = "1.70"
+rust-version = "1.74"
 
 [[bin]]
 name = "tummler"
@@ -16,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-anyhow = "1.0"
+clap_complete = "4.5"
 thiserror = "2.0"
 image = { version = "0.25", features = ["webp", "avif"] }
 walkdir = "2.5"
@@ -30,7 +31,6 @@ flate2 = "1.0"
 bzip2 = "0.4"
 xz2 = "0.1"
 zstd = "0.13"
-mime_guess = "2.0"
 tempfile = "3.10"
 
 [profile.release]
