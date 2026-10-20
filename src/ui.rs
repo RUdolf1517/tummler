@@ -77,11 +77,6 @@ pub fn info(msg: impl std::fmt::Display) {
     eprintln!("tummler: {msg}");
 }
 
-pub fn usage_exit(msg: impl std::fmt::Display) -> ! {
-    error(msg);
-    std::process::exit(EXIT_USAGE);
-}
-
 /// Spinner for a single conversion.
 pub fn spinner(msg: impl Into<String>) -> Option<ProgressBar> {
     if !wants_animation() {

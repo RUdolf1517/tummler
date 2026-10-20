@@ -45,7 +45,7 @@ pub fn run(cmd: &mut Command) -> std::io::Result<Output> {
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
-    let mut child = cmd.spawn()?;
+    let child = cmd.spawn()?;
     let pid = child.id();
     if let Ok(mut g) = pids().lock() {
         g.push(pid);

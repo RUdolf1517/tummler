@@ -2,9 +2,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum TummlerError {
-    #[error("file not found: {0}")]
-    FileNotFound(String),
-
     #[error("unsupported format: {0}")]
     UnsupportedFormat(String),
 
