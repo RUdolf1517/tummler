@@ -187,7 +187,7 @@ mod tests {
         let input = dir.path().join("a.svg");
         std::fs::write(
             &input,
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#ff0000"/></svg>"#,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#ff0000"/></svg>"##,
         )
         .unwrap();
         let output = dir.path().join("a.png");
