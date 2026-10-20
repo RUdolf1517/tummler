@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Allowlist: `m4b` `ogv` `vob` `caf` (ffmpeg), `ipynb` (pandoc)
+- SVG → png/jpg/… via resvg (svg is input-only)
+- `zip` → `tar`/`tar.gz`/… streamed (no temp unpack); zip-slip entries skipped
+- AVIF via ffmpeg (dropped rav1e from the `image` crate)
 - Spreadsheets: `tummler table.xlsx csv` / `txt` (xlsx, xlsm, xlsb, xls, ods via calamine)
 - Spreadsheets: `tummler table.csv xlsx` and `xls`/`ods`/`xlsm`/`xlsb` → xlsx (rust_xlsxwriter, no LibreOffice)
 - Video: container change without `-q`/`--max`/`--resize` tries ffmpeg `-c copy`, then re-encodes if needed

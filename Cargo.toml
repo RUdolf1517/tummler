@@ -20,7 +20,8 @@ path = "src/main.rs"
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.5"
 thiserror = "2.0"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "avif", "bmp", "ico", "tiff", "pnm", "tga", "hdr", "dds", "exr", "ff", "qoi", "rayon"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "pnm", "tga", "hdr", "dds", "exr", "ff", "qoi", "rayon"] }
+resvg = "0.48"
 walkdir = "2.5"
 which = "6.0"
 colored = "2.1"

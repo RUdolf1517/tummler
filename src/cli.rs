@@ -7,6 +7,7 @@ use crate::ui::ColorWhen;
 const AFTER_HELP: &str = "\
 Examples:
   tummler photo.png jpg
+  tummler icon.svg png
   tummler photo.png jpeg -q 80
   tummler photo.png -o photo.webp
   cat in.png | tummler - jpeg > out.jpeg

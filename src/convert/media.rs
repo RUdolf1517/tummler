@@ -20,7 +20,7 @@ fn is_video_ext(ext: &str) -> bool {
     matches!(
         ext,
         "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp"
-            | "gif" | "m4v"
+            | "gif" | "m4v" | "ts" | "mts" | "m2ts" | "ogv" | "vob"
     )
 }
 
@@ -28,7 +28,7 @@ fn is_audio_ext(ext: &str) -> bool {
     matches!(
         ext,
         "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "opus" | "wma" | "aiff" | "aif"
-            | "alac" | "ac3" | "dts" | "amr" | "au" | "ra"
+            | "alac" | "ac3" | "dts" | "amr" | "au" | "ra" | "m4b" | "caf"
     )
 }
 
@@ -144,7 +144,7 @@ pub fn convert_media(
                 };
                 cmd.arg("-b:a").arg(bitrate);
             } else {
-                // Image via ffmpeg (lossy webp, heic, …). libwebp: 0–100 higher=better.
+                // Image via ffmpeg (lossy webp, heic, avif, …). libwebp: 0–100 higher=better.
                 cmd.arg("-q:v").arg(q.to_string());
             }
         }
@@ -276,6 +276,8 @@ mod tests {
         assert!(can_try_stream_copy("mkv", "mp4", None, &g, None));
         assert!(can_try_stream_copy("mp4", "mkv", None, &g, None));
         assert!(can_try_stream_copy("m4a", "mp4", None, &g, None));
+        assert!(can_try_stream_copy("m4b", "m4a", None, &g, None));
+        assert!(can_try_stream_copy("ogv", "mp4", None, &g, None));
         assert!(!can_try_stream_copy("mkv", "mp4", Some(80), &g, None));
         assert!(!can_try_stream_copy("mkv", "gif", None, &g, None));
         assert!(!can_try_stream_copy("mp4", "mp4", None, &g, None));

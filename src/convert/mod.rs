@@ -9,7 +9,8 @@ use crate::deps;
 use crate::error::TummlerError;
 use crate::geom::Geometry;
 use crate::util::{
-    classify_ext, get_extension, is_heif, is_stdio, normalize_ext, staging_path, FormatKind,
+    classify_ext, get_extension, is_ffmpeg_image, is_stdio, is_svg, normalize_ext, staging_path,
+    FormatKind,
 };
 use colored::Colorize;
 use std::path::Path;
@@ -40,7 +41,7 @@ pub fn prefetch_deps(
     // Native webp is lossless only; `-q` goes through ffmpeg (libwebp).
     let lossy_webp = target == "webp" && quality.is_some();
     let mut need_ffmpeg =
-        target_kind == FormatKind::Media || is_heif(target_ext) || lossy_webp;
+        target_kind == FormatKind::Media || is_ffmpeg_image(target_ext) || lossy_webp;
     let soffice_present = deps::soffice_bin().is_some();
     let need_pandoc = target_kind == FormatKind::Document
         && inputs.iter().any(|p| {
@@ -60,7 +61,7 @@ pub fn prefetch_deps(
         need_ffmpeg = need_ffmpeg
             || inputs.iter().any(|p| {
                 is_stdio(p)
-                    || is_heif(&get_extension(p).unwrap_or_default())
+                    || is_ffmpeg_image(&get_extension(p).unwrap_or_default())
                     || matches!(
                         classify_ext(&get_extension(p).unwrap_or_default()),
                         FormatKind::Media | FormatKind::Document
@@ -173,8 +174,10 @@ pub fn convert_file(
     } else {
         match target_kind {
             FormatKind::Image => {
-                if is_heif(&source_ext)
-                    || is_heif(&target_ext)
+                if is_svg(&source_ext) {
+                    image::convert_image(input, &staging, opts.quality, opts.geometry)
+                } else if is_ffmpeg_image(&source_ext)
+                    || is_ffmpeg_image(&target_ext)
                     || (target_ext == "webp" && opts.quality.is_some())
                 {
                     via_ffmpeg()

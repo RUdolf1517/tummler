@@ -19,6 +19,7 @@ Images · audio · video · documents · spreadsheets · archives.
 
 ```bash
 tummler photo.png jpg
+tummler icon.svg png
 tummler photo.heic jpg --max 1920
 tummler ./photos webp -r --skip-newer -o ./out
 tummler video.mp4 gif
@@ -205,9 +206,9 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 
 | | | |
 |---|---|---|
-| **Images** | png jpg gif bmp ico tiff webp avif heic pnm tga dds hdr qoi exr | Rust · HEIC via ffmpeg |
-| **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a opus … | ffmpeg |
-| **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); md/html/tex/… | pandoc · LaTeX for pandoc PDF · optional LibreOffice |
+| **Images** | png jpg gif bmp ico tiff webp svg→raster avif heic pnm tga dds hdr qoi exr | Rust · resvg · HEIC/AVIF via ffmpeg |
+| **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a m4b ogv vob caf opus … | ffmpeg |
+| **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); md/html/tex/ipynb/… | pandoc · LaTeX for pandoc PDF · optional LibreOffice |
 | **Spreadsheets** | xlsx/xls/ods → csv txt; csv/xls/ods → xlsx | Rust (calamine · rust_xlsxwriter) |
 | **Slides** | pptx/ppsx/odp/ppt → pdf and between decks if soffice is present; pptx ↔ ppsx copy; odt/docx/md → pptx | optional LibreOffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
@@ -228,8 +229,8 @@ tummler --completions fish > ~/.config/fish/completions/tummler.fish
 ## How it works
 
 ```
-tummler ─┬─ images       →  image crate
-         ├─ archives     →  zip / tar / gz / bz2 / xz / zstd
+tummler ─┬─ images       →  image crate; svg via resvg; avif/heic via ffmpeg
+         ├─ archives     →  zip / tar / gz / bz2 / xz / zstd (zip→tar streamed)
          ├─ audio/video  →  ffmpeg
          ├─ spreadsheets →  calamine + rust_xlsxwriter (no LibreOffice)
          ├─ slides       →  soffice if already installed; pptx ↔ ppsx is a copy
