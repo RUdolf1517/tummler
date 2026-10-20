@@ -105,9 +105,11 @@ TTY: spinner for one file, progress bar for a batch. `--quiet` and pipes stay si
 ```bash
 tummler photo.png jpeg -q 90
 tummler photo.png jpg --max 1920          # longest side, never upscales
-tummler photo.png webp --resize 50%
+tummler photo.png webp --resize 50%       # lossless unless -q
+tummler photo.png webp -q 80              # lossy (ffmpeg)
+tummler photo.png avif -q 70
 tummler photo.png jpg --resize 800x       # width 800, height follows
-tummler video.mp4 webm -q 70              # crf
+tummler video.mp4 webm -q 80              # CRF ~22, not x264 “slow”
 tummler video.mp4 mp3 -q 85               # bitrate
 ```
 
@@ -124,7 +126,7 @@ tummler a.xlsx b.xls csv -o ./out/
 
 ### Slides
 
-PowerPoint ↔ PDF in-process (office2pdf + hayro). No LibreOffice, no extra install.
+PowerPoint ↔ PDF in-process (office2pdf + hayro). `.pptx` / `.ppsx` only — not `.ppt` / `.odp`. No LibreOffice.
 
 ```bash
 tummler slides.pptx pdf

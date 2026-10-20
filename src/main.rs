@@ -232,7 +232,13 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_OK;
     }
 
-    if let Err(e) = convert::prefetch_deps(&valid_inputs, &target_ext, cli.no_auto_install, cli.yes)
+    if let Err(e) = convert::prefetch_deps(
+        &valid_inputs,
+        &target_ext,
+        cli.quality,
+        cli.no_auto_install,
+        cli.yes,
+    )
     {
         ui::error(e);
         return ui::EXIT_FAIL;
@@ -283,7 +289,11 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_FAIL;
     }
 
-    let jobs = resolve_jobs(cli.jobs, tasks.len());
+    let jobs = resolve_jobs(cli.jobs, tasks.len(), &target_ext);
+    let cpu = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let ffmpeg_threads = if jobs <= 1 { 0 } else { (cpu / jobs).max(1) };
     let ffmpeg_args = cli.ffmpeg_args.clone();
     let quality = cli.quality;
     let overwrite = cli.overwrite;
@@ -309,6 +319,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         yes,
         verbose,
         geometry: &geometry,
+        ffmpeg_threads,
     };
 
     let run_one = |t: &Task| {
@@ -437,6 +448,7 @@ struct JobSpec<'a> {
     yes: bool,
     verbose: bool,
     geometry: &'a Geometry,
+    ffmpeg_threads: usize,
 }
 
 fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
@@ -454,6 +466,7 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
         verbose: spec.verbose,
         geometry: spec.geometry,
         sheet: t.sheet.as_deref(),
+        ffmpeg_threads: spec.ffmpeg_threads,
     };
     match convert::convert_file(&t.input, &t.output, spec.target_ext, &opts) {
         Ok(()) => TaskResult::Ok {
@@ -591,6 +604,7 @@ fn run_stdio(
         verbose: cli.verbose,
         geometry,
         sheet: sheet.as_deref().filter(|s| *s != "*"),
+        ffmpeg_threads: 0,
     };
 
     match convert::convert_file(&input_path, &output, target_ext, &opts) {
@@ -621,7 +635,7 @@ fn run_stdio(
     }
 }
 
-fn resolve_jobs(requested: usize, nfiles: usize) -> usize {
+fn resolve_jobs(requested: usize, nfiles: usize, target_ext: &str) -> usize {
     if nfiles <= 1 {
         return 1;
     }
@@ -629,7 +643,13 @@ fn resolve_jobs(requested: usize, nfiles: usize) -> usize {
         .map(|n| n.get())
         .unwrap_or(4);
     let n = if requested == 0 { auto } else { requested };
-    n.min(nfiles).max(1)
+    let n = n.min(nfiles).max(1);
+    // ffmpeg is already internally parallel; auto `-j` of N×N cores thrashes.
+    if requested == 0 && util::classify_ext(target_ext) == util::FormatKind::Media {
+        n.min(2)
+    } else {
+        n
+    }
 }
 
 fn resolve_format(cli: &cli::Cli) -> Result<String, i32> {

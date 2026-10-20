@@ -6,7 +6,34 @@ use crate::util::normalize_ext;
 use std::path::Path;
 use std::process::Command;
 
-/// Audio/video conversion via ffmpeg
+/// Map 1..=100 onto x264/x265 CRF 18..=38 (useful range). 100 → 18, 80 → 22, 50 → 28.
+fn quality_to_crf(q: u8) -> u8 {
+    let q = q.clamp(1, 100);
+    (18.0 + f32::from(100 - q) * 0.2).round() as u8
+}
+
+fn x264_preset(q: u8) -> &'static str {
+    if q >= 80 { "medium" } else { "veryfast" }
+}
+
+fn is_video_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp"
+            | "gif" | "m4v"
+    )
+}
+
+fn is_audio_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "opus" | "wma" | "aiff" | "aif"
+            | "alac" | "ac3" | "dts" | "amr" | "au" | "ra"
+    )
+}
+
+/// Audio/video conversion via ffmpeg.
+#[allow(clippy::too_many_arguments)]
 pub fn convert_media(
     input: &Path,
     output: &Path,
@@ -15,12 +42,14 @@ pub fn convert_media(
     no_auto_install: bool,
     assume_yes: bool,
     geometry: &Geometry,
+    ffmpeg_threads: usize,
 ) -> Result<(), TummlerError> {
     deps::ensure_available("ffmpeg", no_auto_install, assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("ffmpeg".into(), e))?;
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"]);
+    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"]);
+    cmd.arg("-i");
     cmd.arg(input);
 
     let out_ext = output
@@ -29,10 +58,14 @@ pub fn convert_media(
         .map(normalize_ext)
         .unwrap_or_default();
 
-    let user_has_vf = ffmpeg_args.is_some_and(|s| {
-        s.split_whitespace()
-            .any(|a| a == "-vf" || a == "-filter:v" || a == "-filter_complex")
-    });
+    let user_has = |flag: &str| {
+        ffmpeg_args.is_some_and(|s| s.split_whitespace().any(|a| a == flag))
+    };
+    if ffmpeg_threads > 0 && !user_has("-threads") {
+        cmd.arg("-threads").arg(ffmpeg_threads.to_string());
+    }
+
+    let user_has_vf = user_has("-vf") || user_has("-filter:v") || user_has("-filter_complex");
     let scale = if user_has_vf {
         None
     } else {
@@ -53,19 +86,18 @@ pub fn convert_media(
         }
         if let Some(q) = quality {
             let q = q.clamp(1, 100);
-            let is_video = matches!(
-                out_ext.as_str(),
-                "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp"
-                    | "gif" | "m4v"
-            );
-            if is_video && out_ext != "gif" {
-                let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
+            if is_video_ext(&out_ext) && out_ext != "gif" {
+                let crf = quality_to_crf(q);
                 cmd.arg("-crf").arg(crf.to_string());
-                // -preset is libx264/x265 only; webm/vp9 does not have it and ffmpeg fails
-                if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
-                    cmd.arg("-preset").arg(if q >= 80 { "slow" } else { "medium" });
+                if out_ext == "webm" && !user_has("-b:v") {
+                    // VP9 CRF is ignored unless bitrate is unconstrained.
+                    cmd.args(["-b:v", "0"]);
                 }
-            } else if !is_video {
+                // -preset is libx264/x265 only; webm/vp9 fails on it.
+                if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
+                    cmd.arg("-preset").arg(x264_preset(q));
+                }
+            } else if is_audio_ext(&out_ext) {
                 let bitrate = match q {
                     90..=100 => "320k",
                     80..=89 => "256k",
@@ -75,6 +107,9 @@ pub fn convert_media(
                     _ => "64k",
                 };
                 cmd.arg("-b:a").arg(bitrate);
+            } else {
+                // Image via ffmpeg (lossy webp, heic, …). libwebp: 0–100 higher=better.
+                cmd.arg("-q:v").arg(q.to_string());
             }
         }
     }
@@ -174,5 +209,27 @@ mod shell_words {
         fn rejects_unclosed() {
             assert!(split(r#"-vf "scale"#).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crf_stays_in_useful_range() {
+        assert_eq!(quality_to_crf(100), 18);
+        assert_eq!(quality_to_crf(90), 20);
+        assert_eq!(quality_to_crf(80), 22);
+        assert_eq!(quality_to_crf(50), 28);
+        assert_eq!(quality_to_crf(1), 38);
+        assert!(quality_to_crf(90) > quality_to_crf(100));
+    }
+
+    #[test]
+    fn preset_never_slow() {
+        assert_eq!(x264_preset(100), "medium");
+        assert_eq!(x264_preset(80), "medium");
+        assert_eq!(x264_preset(79), "veryfast");
     }
 }

@@ -1,10 +1,42 @@
 use crate::error::TummlerError;
 use crate::geom::Geometry;
 use crate::util::normalize_ext;
+use image::ImageDecoder;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
 const BUF: usize = 256 * 1024;
+
+fn map_img(e: impl ToString) -> TummlerError {
+    TummlerError::ImageError(e.to_string())
+}
+
+fn map_io(e: impl ToString) -> TummlerError {
+    TummlerError::IoError(e.to_string())
+}
+
+fn load_image(input: &Path) -> Result<image::DynamicImage, TummlerError> {
+    let reader = image::ImageReader::open(input)
+        .map_err(map_img)?
+        .with_guessed_format()
+        .map_err(map_img)?;
+    let mut decoder = reader.into_decoder().map_err(map_img)?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder).map_err(map_img)?;
+    if orientation != image::metadata::Orientation::NoTransforms {
+        img.apply_orientation(orientation);
+    }
+    Ok(img)
+}
+
+fn into_rgb8(img: image::DynamicImage) -> image::RgbImage {
+    match img {
+        image::DynamicImage::ImageRgb8(buf) => buf,
+        other => other.to_rgb8(),
+    }
+}
 
 /// Image conversion via the `image` crate
 pub fn convert_image(
@@ -19,26 +51,28 @@ pub fn convert_image(
         .map(normalize_ext)
         .unwrap_or_default();
 
-    let reader = image::ImageReader::open(input)
-        .map_err(|e| TummlerError::ImageError(e.to_string()))?
-        .with_guessed_format()
-        .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-    let img = reader
-        .decode()
-        .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-    let img = apply_geometry(img, geometry);
+    let img = apply_geometry(load_image(input)?, geometry);
 
     match output_ext.as_str() {
         "jpg" | "jpeg" => {
             let q = quality.unwrap_or(90).clamp(1, 100);
-            let file = std::fs::File::create(output)
-                .map_err(|e| TummlerError::IoError(e.to_string()))?;
+            let file = std::fs::File::create(output).map_err(map_io)?;
             let mut writer = BufWriter::with_capacity(BUF, file);
-            let rgb = img.to_rgb8();
+            let rgb = into_rgb8(img);
             let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, q);
-            rgb.write_with_encoder(encoder)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-            writer.flush().map_err(|e| TummlerError::IoError(e.to_string()))?;
+            rgb.write_with_encoder(encoder).map_err(map_img)?;
+            writer.flush().map_err(map_io)?;
+        }
+        "avif" => {
+            let q = quality.unwrap_or(80).clamp(1, 100);
+            let file = std::fs::File::create(output).map_err(map_io)?;
+            let mut writer = BufWriter::with_capacity(BUF, file);
+            let rgba = img.to_rgba8();
+            // speed 6: rav1e default 4 is slow; 1 thread so a `-j` batch doesn't oversubscribe.
+            let encoder = image::codecs::avif::AvifEncoder::new_with_speed_quality(&mut writer, 6, q)
+                .with_num_threads(Some(1));
+            rgba.write_with_encoder(encoder).map_err(map_img)?;
+            writer.flush().map_err(map_io)?;
         }
         _ => {
             let fmt = image_format_from_ext(&output_ext).ok_or_else(|| {

@@ -189,19 +189,22 @@ fn csv_escape(s: &str) -> String {
     out
 }
 
-fn format_csv(rows: &[Vec<String>]) -> String {
-    let mut out = String::new();
+fn write_csv(rows: &[Vec<String>], f: &mut impl Write) -> std::io::Result<()> {
     for row in rows {
-        let line = row.iter().map(|c| csv_escape(c)).collect::<Vec<_>>().join(",");
-        out.push_str(&line);
-        out.push('\n');
+        for (i, c) in row.iter().enumerate() {
+            if i > 0 {
+                f.write_all(b",")?;
+            }
+            f.write_all(csv_escape(c).as_bytes())?;
+        }
+        f.write_all(b"\n")?;
     }
-    out
+    Ok(())
 }
 
-fn format_txt(rows: &[Vec<String>]) -> String {
+fn write_txt(rows: &[Vec<String>], f: &mut impl Write) -> std::io::Result<()> {
     if rows.is_empty() {
-        return String::new();
+        return Ok(());
     }
     let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
     let mut widths = vec![0usize; ncols];
@@ -210,22 +213,23 @@ fn format_txt(rows: &[Vec<String>]) -> String {
             widths[i] = widths[i].max(cell.chars().count());
         }
     }
-    let mut out = String::new();
     for row in rows {
         for (i, w) in widths.iter().enumerate() {
             if i > 0 {
-                out.push_str("  ");
+                f.write_all(b"  ")?;
             }
             let cell = row.get(i).map(String::as_str).unwrap_or("");
-            out.push_str(cell);
+            f.write_all(cell.as_bytes())?;
             if i + 1 < ncols {
                 let pad = w.saturating_sub(cell.chars().count());
-                out.push_str(&" ".repeat(pad));
+                for _ in 0..pad {
+                    f.write_all(b" ")?;
+                }
             }
         }
-        out.push('\n');
+        f.write_all(b"\n")?;
     }
-    out
+    Ok(())
 }
 
 /// Spreadsheet (xlsx/xls/ods/…) → csv or aligned txt.
@@ -243,14 +247,17 @@ pub fn convert_spreadsheet(
         ));
     }
     let rows = read_sheet(input, sheet)?;
-    let body = if ext == "csv" {
-        format_csv(&rows)
+    let mut f = std::io::BufWriter::with_capacity(
+        64 * 1024,
+        std::fs::File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?,
+    );
+    let write = if ext == "csv" {
+        write_csv(&rows, &mut f)
     } else {
-        format_txt(&rows)
+        write_txt(&rows, &mut f)
     };
-    let mut f = std::fs::File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    f.write_all(body.as_bytes())
-        .map_err(|e| TummlerError::IoError(e.to_string()))?;
+    write.map_err(|e| TummlerError::IoError(e.to_string()))?;
+    f.flush().map_err(|e| TummlerError::IoError(e.to_string()))?;
     Ok(())
 }
 

@@ -16,10 +16,7 @@ type PptxZip = ZipWriter<BufWriter<File>>;
 
 /// PowerPoint decks we convert natively (pptx → pdf via office2pdf, pdf → pptx via hayro).
 pub fn is_slide_ext(ext: &str) -> bool {
-    matches!(
-        normalize_ext(ext).as_str(),
-        "pptx" | "ppt" | "ppsx" | "pps" | "odp"
-    )
+    matches!(normalize_ext(ext).as_str(), "pptx" | "ppsx")
 }
 
 /// `pptx → pdf` or `pdf → pptx`.
@@ -75,6 +72,11 @@ fn pptx_to_pdf(input: &Path, output: &Path) -> Result<(), TummlerError> {
 fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
     let bytes = std::fs::read(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
     let pdf = Pdf::new(bytes).map_err(|e| TummlerError::OfficeError(format!("{e:?}")))?;
+    let pages = pdf.pages();
+    let n = pages.len();
+    if n == 0 {
+        return Err(TummlerError::OfficeError("empty PDF".into()));
+    }
 
     let cache = RenderCache::new();
     let interpreter_settings = InterpreterSettings::default();
@@ -85,10 +87,9 @@ fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
         ..Default::default()
     };
 
-    let mut images: Vec<(u32, u32, Vec<u8>)> = Vec::new();
-    for (idx, page) in pdf.pages().iter().enumerate() {
+    let render_page = |idx: usize| -> Result<(u32, u32, Vec<u8>), TummlerError> {
         let rendered = render(
-            page,
+            &pages[idx],
             &cache,
             &interpreter_settings,
             &render_settings,
@@ -99,12 +100,23 @@ fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
         let png = rendered
             .into_png()
             .map_err(|e| TummlerError::OfficeError(format!("page {}: {e}", idx + 1)))?;
-        images.push((w, h, png));
+        Ok((w, h, png))
+    };
+
+    let (mut zip, cx, cy) = {
+        let (w0, h0, png0) = render_page(0)?;
+        let cx = px_to_emu(w0);
+        let cy = px_to_emu(h0);
+        let mut zip = start_pptx(output, n, cx, cy)?;
+        append_slide(&mut zip, 1, w0, h0, &png0, cx, cy)?;
+        (zip, cx, cy)
+    };
+    for i in 1..n {
+        let (w, h, png) = render_page(i)?;
+        append_slide(&mut zip, i + 1, w, h, &png, cx, cy)?;
     }
-    if images.is_empty() {
-        return Err(TummlerError::OfficeError("empty PDF".into()));
-    }
-    write_image_pptx(&images, output)
+    zip.finish().map_err(zip_err)?;
+    Ok(())
 }
 
 /// 144 dpi (2× 72) → EMU.
@@ -262,8 +274,9 @@ mod tests {
     #[test]
     fn slide_exts() {
         assert!(is_slide_ext("PPTX"));
-        assert!(is_slide_ext("ppt"));
-        assert!(is_slide_ext("odp"));
+        assert!(is_slide_ext("ppsx"));
+        assert!(!is_slide_ext("ppt"));
+        assert!(!is_slide_ext("odp"));
         assert!(!is_slide_ext("docx"));
         assert!(!is_slide_ext("pdf"));
     }
@@ -271,7 +284,8 @@ mod tests {
     #[test]
     fn pairs() {
         assert!(is_office_pair("pptx", "pdf"));
-        assert!(is_office_pair("PPT", "PDF"));
+        assert!(is_office_pair("ppsx", "pdf"));
+        assert!(!is_office_pair("PPT", "PDF"));
         assert!(is_office_pair("pdf", "pptx"));
         assert!(!is_office_pair("pdf", "odp"));
         assert!(!is_office_pair("docx", "pdf"));

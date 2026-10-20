@@ -24,17 +24,24 @@ pub struct ConvertOpts<'a> {
     pub verbose: bool,
     pub geometry: &'a Geometry,
     pub sheet: Option<&'a str>,
+    /// ffmpeg `-threads`. 0 = let ffmpeg decide (single job).
+    pub ffmpeg_threads: usize,
 }
 
 /// Check external dependencies once before a parallel batch.
 pub fn prefetch_deps(
     inputs: &[std::path::PathBuf],
     target_ext: &str,
+    quality: Option<u8>,
     no_auto: bool,
     assume_yes: bool,
 ) -> Result<(), TummlerError> {
     let target_kind = classify_ext(target_ext);
-    let mut need_ffmpeg = target_kind == FormatKind::Media || is_heif(target_ext);
+    let target = normalize_ext(target_ext);
+    // Native webp is lossless only; `-q` goes through ffmpeg (libwebp).
+    let lossy_webp = target == "webp" && quality.is_some();
+    let mut need_ffmpeg =
+        target_kind == FormatKind::Media || is_heif(target_ext) || lossy_webp;
     let need_pandoc = target_kind == FormatKind::Document
         && inputs.iter().any(|p| {
             let ext = get_extension(p).unwrap_or_default();
@@ -127,10 +134,15 @@ pub fn convert_file(
             opts.no_auto_install,
             opts.assume_yes,
             opts.geometry,
+            opts.ffmpeg_threads,
         )
     };
 
-    let result = if source_kind == FormatKind::Spreadsheet {
+    let result = if is_legacy_slide(&source_ext) {
+        Err(TummlerError::Other(format!(
+            "native slides support .pptx/.ppsx → pdf (not .{source_ext})"
+        )))
+    } else if source_kind == FormatKind::Spreadsheet {
         if spreadsheet::is_tabular_ext(&target_ext) {
             spreadsheet::convert_spreadsheet(input, &staging, &target_ext, opts.sheet)
         } else {
@@ -151,6 +163,8 @@ pub fn convert_file(
         match target_kind {
             FormatKind::Image => {
                 if is_heif(&source_ext) || is_heif(&target_ext) {
+                    via_ffmpeg()
+                } else if target_ext == "webp" && opts.quality.is_some() {
                     via_ffmpeg()
                 } else {
                     match source_kind {
@@ -201,6 +215,10 @@ pub fn convert_file(
             Err(e)
         }
     }
+}
+
+fn is_legacy_slide(ext: &str) -> bool {
+    matches!(normalize_ext(ext).as_str(), "ppt" | "pps" | "odp")
 }
 
 fn is_slide_pair(src: &str, dst: &str) -> bool {

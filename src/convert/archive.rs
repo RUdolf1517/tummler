@@ -70,17 +70,110 @@ fn unpack_archive(input: &Path, ext: &str, dest: &Path) -> Result<(), TummlerErr
 fn pack_plain_file(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerError> {
     match ext {
         "gz" | "bz2" | "xz" | "zst" => compress_file(input, output, ext),
-        "zip" | "tar" | "tar.gz" | "tar.bz2" | "tar.xz" | "tar.zst" => {
-            let temp_dir = tempfile::tempdir().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-            let name = input.file_name().unwrap_or_else(|| std::ffi::OsStr::new("file"));
-            let dest = temp_dir.path().join(name);
-            std::fs::copy(input, &dest).map_err(|e| TummlerError::IoError(e.to_string()))?;
-            pack_archive(temp_dir.path(), output, ext)
-        }
+        "zip" => pack_one_zip(input, output),
+        "tar" | "tar.gz" | "tar.bz2" | "tar.xz" | "tar.zst" => pack_one_tar(input, output, ext),
         _ => Err(TummlerError::ArchiveError(format!(
             "unsupported target archive format: {ext}"
         ))),
     }
+}
+
+fn entry_name(input: &Path) -> std::borrow::Cow<'_, str> {
+    input
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or(std::borrow::Cow::Borrowed("file"))
+}
+
+fn pack_one_zip(input: &Path, output: &Path) -> Result<(), TummlerError> {
+    let file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let mut zip = zip::ZipWriter::new(io::BufWriter::with_capacity(64 * 1024, file));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+    zip.start_file(entry_name(input).as_ref(), options)
+        .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+    let mut f = io::BufReader::with_capacity(
+        64 * 1024,
+        File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?,
+    );
+    io::copy(&mut f, &mut zip).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let mut inner = zip
+        .finish()
+        .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+    inner.flush().map_err(|e| TummlerError::IoError(e.to_string()))?;
+    Ok(())
+}
+
+fn pack_one_tar(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerError> {
+    let name = entry_name(input);
+    let file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    match ext {
+        "tar" => {
+            let mut builder = tar::Builder::new(file);
+            builder
+                .append_path_with_name(input, name.as_ref())
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            builder
+                .finish()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "tar.gz" => {
+            let gz = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+            let mut builder = tar::Builder::new(gz);
+            builder
+                .append_path_with_name(input, name.as_ref())
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            let gz = builder
+                .into_inner()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            gz.finish()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "tar.bz2" => {
+            let bz = bzip2::write::BzEncoder::new(file, bzip2::Compression::default());
+            let mut builder = tar::Builder::new(bz);
+            builder
+                .append_path_with_name(input, name.as_ref())
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            let bz = builder
+                .into_inner()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            bz.finish()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "tar.xz" => {
+            let xz = xz2::write::XzEncoder::new(file, 6);
+            let mut builder = tar::Builder::new(xz);
+            builder
+                .append_path_with_name(input, name.as_ref())
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            let xz = builder
+                .into_inner()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            xz.finish()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        "tar.zst" => {
+            let enc = zstd::stream::write::Encoder::new(file, 3)
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            let mut builder = tar::Builder::new(enc);
+            builder
+                .append_path_with_name(input, name.as_ref())
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            let enc = builder
+                .into_inner()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+            enc.finish()
+                .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        }
+        _ => {
+            return Err(TummlerError::ArchiveError(format!(
+                "unsupported target archive format: {ext}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn compress_file(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerError> {
@@ -442,5 +535,18 @@ mod tests {
         unpack_zip(&zip_path, unpacked.path()).unwrap();
         let restored = std::fs::read(unpacked.path().join("note.txt")).unwrap();
         assert_eq!(restored, b"zip me");
+    }
+
+    #[test]
+    fn plain_file_to_tar_gz() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("note.txt");
+        std::fs::write(&input, b"tar me").unwrap();
+        let out = dir.path().join("note.tar.gz");
+        convert_archive(&input, &out).unwrap();
+        let unpacked = tempfile::tempdir().unwrap();
+        unpack_tar_gz(&out, unpacked.path()).unwrap();
+        let restored = std::fs::read(unpacked.path().join("note.txt")).unwrap();
+        assert_eq!(restored, b"tar me");
     }
 }
