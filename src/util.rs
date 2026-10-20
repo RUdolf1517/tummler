@@ -571,11 +571,11 @@ pub fn print_supported_formats() {
     println!(
         "  {} {}",
         "🎞  Slides".bold(),
-        "(pptx→pdf native; odt/docx/md→pptx via pandoc)".dimmed()
+        "(pptx→pdf native; odp/ppt if soffice already installed)".dimmed()
     );
     println!(
         "     {}",
-        "pptx/ppsx → pdf;  pptx ↔ ppsx;  odt/docx/md → pptx (pandoc)".cyan()
+        "pptx/ppsx → pdf;  pptx ↔ ppsx;  odp/ppt via soffice (no auto-install);  odt/docx/md → pptx (pandoc)".cyan()
     );
     println!();
 

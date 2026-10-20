@@ -4,6 +4,7 @@ pub mod image;
 pub mod media;
 #[cfg(feature = "slides")]
 pub mod office;
+pub mod soffice;
 pub mod spreadsheet;
 
 use crate::deps;
@@ -49,7 +50,11 @@ pub fn prefetch_deps(
                 classify_ext(&ext),
                 FormatKind::Document | FormatKind::Unknown
             ) && !is_slide_pair(&ext, target_ext)
+                && !soffice::needs_soffice(&ext, target_ext)
         });
+    let need_soffice = inputs
+        .iter()
+        .any(|p| soffice::needs_soffice(&get_extension(p).unwrap_or_default(), target_ext));
 
     if target_kind == FormatKind::Image {
         need_ffmpeg = need_ffmpeg
@@ -70,6 +75,10 @@ pub fn prefetch_deps(
     if need_pandoc {
         deps::ensure_available("pandoc", no_auto, assume_yes)
             .map_err(|e| TummlerError::DependencyMissing("pandoc".into(), e))?;
+    }
+    if need_soffice {
+        deps::require_soffice()
+            .map_err(|e| TummlerError::DependencyMissing("soffice".into(), e))?;
     }
     Ok(())
 }
@@ -138,10 +147,8 @@ pub fn convert_file(
         )
     };
 
-    let result = if is_legacy_slide(&source_ext) {
-        Err(TummlerError::Other(format!(
-            "native slides support .pptx/.ppsx → pdf (not .{source_ext})"
-        )))
+    let result = if soffice::needs_soffice(&source_ext, &target_ext) {
+        soffice::convert_impress(input, &staging, &target_ext)
     } else if normalize_ext(&source_ext) == "pdf" && target_ext == "pptx" {
         Err(TummlerError::UnsupportedConversion(
             source_ext,
@@ -221,10 +228,6 @@ pub fn convert_file(
             Err(e)
         }
     }
-}
-
-fn is_legacy_slide(ext: &str) -> bool {
-    matches!(normalize_ext(ext).as_str(), "ppt" | "pps" | "odp")
 }
 
 fn is_slide_pair(src: &str, dst: &str) -> bool {

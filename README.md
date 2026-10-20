@@ -126,7 +126,9 @@ tummler a.xlsx b.xls csv -o ./out/
 
 ### Slides
 
-`pptx`/`ppsx` → PDF in-process (office2pdf / Typst). `pptx` ↔ `ppsx` is a copy (same OOXML package). Not `.ppt` / `.odp`. No LibreOffice.
+`pptx`/`ppsx` → PDF in-process (office2pdf / Typst). `pptx` ↔ `ppsx` is a copy (same OOXML package).
+
+`.odp` / `.ppt` / `.pps` use **LibreOffice only if `soffice` is already on PATH**. tummler never asks to install it and never installs it.
 
 Document → deck goes through pandoc (`odt`/`docx`/`md` → `pptx`). `pdf → pptx` is not supported.
 
@@ -134,6 +136,7 @@ Document → deck goes through pandoc (`odt`/`docx`/`md` → `pptx`). `pdf → p
 tummler slides.pptx pdf
 tummler slides.pptx ppsx
 tummler notes.odt pptx
+tummler deck.odp pptx          # needs soffice already installed
 ```
 
 ### Overwrite
@@ -194,7 +197,7 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 | **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a opus … | ffmpeg |
 | **Documents** | pdf docx odt html md tex rst epub csv json txt rtf | pandoc · LaTeX for PDF |
 | **Spreadsheets** | xlsx xlsm xlsb xls ods → csv txt | Rust (calamine) |
-| **Slides** | pptx/ppsx → pdf; pptx ↔ ppsx; odt/docx/md → pptx | Rust (office2pdf) · pandoc for documents → pptx |
+| **Slides** | pptx/ppsx → pdf; pptx ↔ ppsx; odp/ppt via soffice if present; odt/docx/md → pptx | Rust · optional LibreOffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
 
 ```bash
@@ -217,7 +220,7 @@ tummler ─┬─ images       →  image crate
          ├─ archives     →  zip / tar / gz / bz2 / xz / zstd
          ├─ audio/video  →  ffmpeg
          ├─ spreadsheets →  calamine (xlsx/xls/ods → csv/txt)
-         ├─ slides       →  office2pdf (pptx/ppsx → pdf)
+         ├─ slides       →  office2pdf (pptx/ppsx → pdf); soffice if already installed (odp/ppt)
          └─ documents    →  pandoc
 ```
 

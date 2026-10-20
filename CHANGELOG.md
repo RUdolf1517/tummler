@@ -10,7 +10,7 @@
 - CI: tests/clippy without Typst (`--no-default-features`); `slides` is still the default build feature
 - Video `-q` maps to CRF 18–38; x264 preset `medium`/`veryfast` (never `slow`); webm CRF uses `-b:v 0`
 - Auto `-j` for media capped at 2; each ffmpeg gets `cpu/jobs` threads
-- `.ppt`/`.odp` rejected (pptx/ppsx only)
+- `.odp`/`.ppt`/`.pps` via LibreOffice only if `soffice` is already on PATH (never auto-installed)
 - `-q` on AVIF; lossy WebP via ffmpeg; JPEG skips an extra RGB copy; EXIF orientation applied
 - Pack file→zip/tar without a temp copy; spreadsheet writes CSV/TXT without a second buffer
 

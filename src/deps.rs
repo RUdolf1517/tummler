@@ -1,10 +1,36 @@
 use colored::Colorize;
 use std::io::IsTerminal;
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Check whether a binary is on PATH.
 pub fn is_available(bin: &str) -> bool {
     which::which(bin).is_ok()
+}
+
+/// LibreOffice, if the user already installed it. Never auto-installed.
+pub fn soffice_bin() -> Option<PathBuf> {
+    for name in ["soffice", "libreoffice"] {
+        if let Ok(p) = which::which(name) {
+            return Some(p);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let bundled =
+            PathBuf::from("/Applications/LibreOffice.app/Contents/MacOS/soffice");
+        if bundled.is_file() {
+            return Some(bundled);
+        }
+    }
+    None
+}
+
+/// `.odp`/`.ppt` need soffice on PATH. tummler will not install LibreOffice.
+pub fn require_soffice() -> Result<PathBuf, String> {
+    soffice_bin().ok_or_else(|| {
+        "LibreOffice (soffice) not found in PATH. tummler does not install it; .odp/.ppt conversions need an existing install.".into()
+    })
 }
 
 /// Human-readable install hints.
@@ -196,6 +222,19 @@ pub fn check_all() {
             );
         }
     }
+
+    let lo = soffice_bin().is_some();
+    let lo_status = if lo {
+        "✓ installed".green()
+    } else {
+        "○ not found (optional, never auto-installed)".yellow()
+    };
+    println!(
+        "  {:12}  {}  — {}",
+        "soffice".bold(),
+        lo_status,
+        ".odp/.ppt if you already have LibreOffice"
+    );
 
     println!();
     println!(

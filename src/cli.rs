@@ -18,6 +18,7 @@ Examples:
   tummler table.xlsx csv --all-sheets
   tummler slides.pptx pdf
   tummler notes.odt pptx
+  tummler deck.odp pptx
   tummler -i
 
 Exit codes:
