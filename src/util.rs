@@ -364,7 +364,7 @@ pub fn classify_ext(ext: &str) -> FormatKind {
         | "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "opus" | "wma"
         | "aiff" | "aif" | "alac" | "ac3" | "dts" | "amr" | "au" | "ra" => FormatKind::Media,
 
-        "pdf" | "docx" | "odt" | "html" | "htm" | "md" | "markdown" | "tex"
+        "pdf" | "docx" | "doc" | "odt" | "html" | "htm" | "md" | "markdown" | "tex"
         | "rst" | "epub" | "pptx" | "ppt" | "ppsx" | "pps" | "odp"
         | "csv" | "json" | "txt" | "rtf"
         | "org" | "adoc" | "djvu" | "fb2" => FormatKind::Document,
@@ -561,10 +561,14 @@ pub fn print_supported_formats() {
     );
     println!();
 
-    println!("  {} {}", "📄  Documents".bold(), "(requires pandoc)".dimmed());
+    println!(
+        "  {} {}",
+        "📄  Documents".bold(),
+        "(pandoc; Word/ODT → pdf via soffice if already installed)".dimmed()
+    );
     println!(
         "     {}",
-        "pdf, docx, odt, html, md, tex, rst, epub, csv, json, txt, rtf".cyan()
+        "pdf, docx, doc, odt, html, md, tex, rst, epub, csv, json, txt, rtf".cyan()
     );
     println!();
 
@@ -641,6 +645,9 @@ mod tests {
         assert_eq!(classify_ext("jpeg"), FormatKind::Image);
         assert_eq!(classify_ext("mp4"), FormatKind::Media);
         assert_eq!(classify_ext("pdf"), FormatKind::Document);
+        assert_eq!(classify_ext("docx"), FormatKind::Document);
+        assert_eq!(classify_ext("doc"), FormatKind::Document);
+        assert_eq!(classify_ext("odt"), FormatKind::Document);
         assert_eq!(classify_ext("pptx"), FormatKind::Document);
         assert_eq!(classify_ext("odp"), FormatKind::Document);
         assert_eq!(classify_ext("xlsx"), FormatKind::Spreadsheet);

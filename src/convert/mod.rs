@@ -148,7 +148,7 @@ pub fn convert_file(
     let result = if soffice::is_ooxml_copy(&source_ext, &target_ext) {
         soffice::copy_ooxml_deck(input, &staging)
     } else if soffice::needs_soffice(&source_ext, &target_ext) {
-        soffice::convert_impress(input, &staging, &target_ext)
+        soffice::convert_office(input, &staging, &target_ext)
     } else if normalize_ext(&source_ext) == "pdf" && target_ext == "pptx" {
         Err(TummlerError::UnsupportedConversion(
             source_ext,

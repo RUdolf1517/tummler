@@ -113,6 +113,16 @@ tummler video.mp4 webm -q 80              # CRF ~22, not x264 “slow”
 tummler video.mp4 mp3 -q 85               # bitrate
 ```
 
+### Documents
+
+Word / ODT → PDF uses **LibreOffice only if `soffice` is already on PATH** (never installed). Markdown, HTML, TeX and the rest still go through pandoc (PDF then needs LaTeX).
+
+```bash
+tummler report.docx pdf        # needs soffice already installed
+tummler notes.odt pdf          # needs soffice already installed
+tummler notes.md html          # pandoc
+```
+
 ### Spreadsheets
 
 Excel / ODS → csv or a padded text table. First sheet by default. No LibreOffice.
@@ -193,7 +203,7 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 |---|---|---|
 | **Images** | png jpg gif bmp ico tiff webp avif heic pnm tga dds hdr qoi exr | Rust · HEIC via ffmpeg |
 | **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a opus … | ffmpeg |
-| **Documents** | pdf docx odt html md tex rst epub csv json txt rtf | pandoc · LaTeX for PDF |
+| **Documents** | doc/docx/odt/rtf → pdf if soffice is present; md/html/tex/… via pandoc | optional LibreOffice · pandoc · LaTeX for pandoc PDF |
 | **Spreadsheets** | xlsx xlsm xlsb xls ods → csv txt | Rust (calamine) |
 | **Slides** | pptx/ppsx/odp/ppt → pdf and between decks if soffice is present; pptx ↔ ppsx copy; odt/docx/md → pptx | optional LibreOffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
@@ -219,7 +229,7 @@ tummler ─┬─ images       →  image crate
          ├─ audio/video  →  ffmpeg
          ├─ spreadsheets →  calamine (xlsx/xls/ods → csv/txt)
          ├─ slides       →  soffice if already installed; pptx ↔ ppsx is a copy
-         └─ documents    →  pandoc
+         └─ documents    →  soffice for Word/ODT → pdf; pandoc otherwise
 ```
 
 Image and archive batches run in parallel (`-j`). ffmpeg/pandoc are checked once, then the pool starts. Writes go through a staging file, then an atomic rename.

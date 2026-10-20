@@ -17,6 +17,10 @@ fn is_impress(ext: &str) -> bool {
     is_lo_slide(ext) || is_ooxml_slide(ext)
 }
 
+fn is_writer(ext: &str) -> bool {
+    matches!(ext, "odt" | "docx" | "doc" | "rtf")
+}
+
 /// `pptx` ↔ `ppsx`: same OOXML package, no LibreOffice.
 pub fn is_ooxml_copy(src: &str, dst: &str) -> bool {
     let src = normalize_ext(src);
@@ -31,7 +35,8 @@ pub fn copy_ooxml_deck(input: &Path, output: &Path) -> Result<(), TummlerError> 
     Ok(())
 }
 
-/// Already-installed soffice: Impress ↔ pdf / pptx / odp / ppt.
+/// Already-installed soffice: Impress ↔ pdf / pptx / odp / ppt,
+/// and Writer (doc/docx/odt/rtf) → pdf.
 /// Never auto-installed. `pptx` ↔ `ppsx` is a copy, not this.
 pub fn needs_soffice(src: &str, dst: &str) -> bool {
     let src = normalize_ext(src);
@@ -39,10 +44,11 @@ pub fn needs_soffice(src: &str, dst: &str) -> bool {
     if src == dst || is_ooxml_copy(&src, &dst) {
         return false;
     }
-    is_impress(&src) && (is_impress(&dst) || dst == "pdf")
+    (is_impress(&src) && (is_impress(&dst) || dst == "pdf"))
+        || (is_writer(&src) && dst == "pdf")
 }
 
-pub fn convert_impress(
+pub fn convert_office(
     input: &Path,
     output: &Path,
     target_ext: &str,
@@ -157,8 +163,14 @@ mod tests {
         assert!(needs_soffice("odp", "pdf"));
         assert!(needs_soffice("pptx", "pdf"));
         assert!(needs_soffice("ppsx", "pdf"));
+        assert!(needs_soffice("docx", "pdf"));
+        assert!(needs_soffice("odt", "pdf"));
+        assert!(needs_soffice("doc", "pdf"));
+        assert!(needs_soffice("rtf", "pdf"));
         assert!(!needs_soffice("pptx", "ppsx"));
         assert!(!needs_soffice("odt", "pptx"));
+        assert!(!needs_soffice("docx", "odt"));
+        assert!(!needs_soffice("md", "pdf"));
         assert!(!needs_soffice("pdf", "pptx"));
         assert!(!needs_soffice("pptx", "pptx"));
     }
@@ -185,7 +197,7 @@ mod tests {
         let input = dir.path().join("deck.pptx");
         std::fs::write(&input, b"not a real pptx").unwrap();
         let out = dir.path().join("deck.pdf");
-        let err = convert_impress(&input, &out, "pdf").unwrap_err();
+        let err = convert_office(&input, &out, "pdf").unwrap_err();
         let msg = err.to_string();
         assert!(msg.to_lowercase().contains("libreoffice") || msg.contains("soffice"));
         assert!(!msg.contains("Run `"));

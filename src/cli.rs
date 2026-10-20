@@ -17,6 +17,8 @@ Examples:
   tummler table.xlsx txt --sheet Sales
   tummler table.xlsx csv --all-sheets
   tummler slides.pptx pdf
+  tummler report.docx pdf
+  tummler notes.odt pdf
   tummler notes.odt pptx
   tummler deck.odp pptx
   tummler -i
