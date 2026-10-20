@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Spreadsheets: `tummler table.xlsx csv` / `txt` (xlsx, xlsm, xlsb, xls, ods via calamine)
+- `--sheet NAME` (first sheet by default); `--all-sheets` / `--sheet '*'` → `table-Sheet1.csv`
+
 ## 0.1.0 — 2026-10-20
 
 - `-i` / `--info`: about, Yiddish name, author, GitHub, mail

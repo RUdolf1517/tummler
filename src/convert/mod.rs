@@ -2,6 +2,7 @@ pub mod archive;
 pub mod document;
 pub mod image;
 pub mod media;
+pub mod spreadsheet;
 
 use crate::deps;
 use crate::error::TummlerError;
@@ -20,6 +21,7 @@ pub struct ConvertOpts<'a> {
     pub assume_yes: bool,
     pub verbose: bool,
     pub geometry: &'a Geometry,
+    pub sheet: Option<&'a str>,
 }
 
 /// Check external dependencies once before a parallel batch.
@@ -31,7 +33,13 @@ pub fn prefetch_deps(
 ) -> Result<(), TummlerError> {
     let target_kind = classify_ext(target_ext);
     let mut need_ffmpeg = target_kind == FormatKind::Media || is_heif(target_ext);
-    let need_pandoc = target_kind == FormatKind::Document;
+    let need_pandoc = target_kind == FormatKind::Document
+        && inputs.iter().any(|p| {
+            matches!(
+                classify_ext(&get_extension(p).unwrap_or_default()),
+                FormatKind::Document | FormatKind::Unknown
+            )
+        });
 
     if target_kind == FormatKind::Image {
         need_ffmpeg = need_ffmpeg
@@ -118,35 +126,51 @@ pub fn convert_file(
         )
     };
 
-    let result = match target_kind {
-        FormatKind::Image => {
-            if is_heif(&source_ext) || is_heif(&target_ext) {
-                via_ffmpeg()
-            } else {
-                match source_kind {
-                    FormatKind::Media | FormatKind::Document => via_ffmpeg(),
-                    FormatKind::Archive => Err(TummlerError::UnsupportedConversion(
-                        source_ext,
-                        target_ext.clone(),
-                    )),
-                    FormatKind::Unknown => {
-                        match image::convert_image(input, &staging, opts.quality, opts.geometry) {
-                            Ok(()) => Ok(()),
-                            Err(_) => via_ffmpeg(),
+    let result = if source_kind == FormatKind::Spreadsheet {
+        if spreadsheet::is_tabular_ext(&target_ext) {
+            spreadsheet::convert_spreadsheet(input, &staging, &target_ext, opts.sheet)
+        } else {
+            Err(TummlerError::UnsupportedConversion(
+                source_ext,
+                target_ext.clone(),
+            ))
+        }
+    } else {
+        match target_kind {
+            FormatKind::Image => {
+                if is_heif(&source_ext) || is_heif(&target_ext) {
+                    via_ffmpeg()
+                } else {
+                    match source_kind {
+                        FormatKind::Media | FormatKind::Document => via_ffmpeg(),
+                        FormatKind::Archive | FormatKind::Spreadsheet => {
+                            Err(TummlerError::UnsupportedConversion(
+                                source_ext,
+                                target_ext.clone(),
+                            ))
                         }
-                    }
-                    FormatKind::Image => {
-                        image::convert_image(input, &staging, opts.quality, opts.geometry)
+                        FormatKind::Unknown => {
+                            match image::convert_image(input, &staging, opts.quality, opts.geometry)
+                            {
+                                Ok(()) => Ok(()),
+                                Err(_) => via_ffmpeg(),
+                            }
+                        }
+                        FormatKind::Image => {
+                            image::convert_image(input, &staging, opts.quality, opts.geometry)
+                        }
                     }
                 }
             }
+            FormatKind::Media => via_ffmpeg(),
+            FormatKind::Document => {
+                document::convert_document(input, &staging, opts.no_auto_install, opts.assume_yes)
+            }
+            FormatKind::Archive => archive::convert_archive(input, &staging),
+            FormatKind::Spreadsheet | FormatKind::Unknown => {
+                Err(TummlerError::UnsupportedFormat(target_ext.clone()))
+            }
         }
-        FormatKind::Media => via_ffmpeg(),
-        FormatKind::Document => {
-            document::convert_document(input, &staging, opts.no_auto_install, opts.assume_yes)
-        }
-        FormatKind::Archive => archive::convert_archive(input, &staging),
-        FormatKind::Unknown => Err(TummlerError::UnsupportedFormat(target_ext.clone())),
     };
 
     match result {

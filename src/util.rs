@@ -250,6 +250,9 @@ pub fn sniff_suffix(header: &[u8]) -> &'static str {
         }
         return ".mp4";
     }
+    if header.len() >= 8 && header.starts_with(&[0xD0, 0xCF, 0x11, 0xE0]) {
+        return ".xls";
+    }
     if header.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
         return ".webm";
     }
@@ -341,9 +344,10 @@ pub fn staging_path(output: &Path) -> PathBuf {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FormatKind {
     Image,
-    Media,    // audio/video via ffmpeg
-    Document, // via pandoc
-    Archive,  // native
+    Media,        // audio/video via ffmpeg
+    Document,     // via pandoc
+    Spreadsheet,  // xlsx/xls/ods via calamine (input only)
+    Archive,      // native
     Unknown,
 }
 
@@ -364,6 +368,8 @@ pub fn classify_ext(ext: &str) -> FormatKind {
         | "rst" | "epub" | "pptx" | "ppt" | "csv" | "json" | "txt" | "rtf"
         | "org" | "adoc" | "djvu" | "fb2" => FormatKind::Document,
 
+        "xlsx" | "xlsm" | "xlsb" | "xls" | "ods" => FormatKind::Spreadsheet,
+
         "zip" | "tar" | "tar.gz" | "tgz" | "tar.bz2" | "tar.xz" | "gz" | "bz2"
         | "xz" | "zst" | "tar.zst" => FormatKind::Archive,
 
@@ -372,7 +378,10 @@ pub fn classify_ext(ext: &str) -> FormatKind {
 }
 
 pub fn is_supported_output(ext: &str) -> bool {
-    classify_ext(ext) != FormatKind::Unknown
+    !matches!(
+        classify_ext(ext),
+        FormatKind::Unknown | FormatKind::Spreadsheet
+    )
 }
 
 pub fn is_heif(ext: &str) -> bool {
@@ -505,10 +514,11 @@ pub fn print_info() {
     println!("Also a nod to tumbler, the mixing glass.");
     println!();
     println!("This CLI does the same to files: mix any format into any other.");
-    println!("Images, audio, video, documents, archives. Native Rust where");
+    println!("Images, audio, video, documents, spreadsheets, archives. Native Rust where");
     println!("it can; ffmpeg and pandoc where it must. Format last:");
     println!();
     println!("  {}", "tummler photo.png jpg".cyan());
+    println!("  {}", "tummler table.xlsx csv".cyan());
     println!("  {}", "tummler ./photos webp -r --skip-newer".cyan());
     println!();
     println!("{}", "This project was written by AI.".dimmed());
@@ -556,6 +566,17 @@ pub fn print_supported_formats() {
     );
     println!();
 
+    println!(
+        "  {} {}",
+        "📊  Spreadsheets".bold(),
+        "(native, xlsx/xls/ods → csv/txt)".dimmed()
+    );
+    println!(
+        "     {}",
+        "xlsx, xlsm, xlsb, xls, ods  →  csv, txt".cyan()
+    );
+    println!();
+
     println!("  {} {}", "📦  Archives".bold(), "(native)".dimmed());
     println!(
         "     {}",
@@ -567,6 +588,7 @@ pub fn print_supported_formats() {
     println!("  {}  {}", "tummler photo.png jpeg".dimmed(), "→ photo.jpeg".dimmed());
     println!("  {}  {}", "tummler video.mp4 webm -q 80".dimmed(), "→ video.webm".dimmed());
     println!("  {}  {}", "tummler doc.docx pdf".dimmed(), "→ doc.pdf".dimmed());
+    println!("  {}  {}", "tummler table.xlsx csv".dimmed(), "→ table.csv".dimmed());
     println!("  {}  {}", "tummler archive.zip tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
     println!(
         "  {}  {}",
@@ -604,8 +626,13 @@ mod tests {
         assert_eq!(classify_ext("jpeg"), FormatKind::Image);
         assert_eq!(classify_ext("mp4"), FormatKind::Media);
         assert_eq!(classify_ext("pdf"), FormatKind::Document);
+        assert_eq!(classify_ext("xlsx"), FormatKind::Spreadsheet);
+        assert_eq!(classify_ext("xls"), FormatKind::Spreadsheet);
+        assert_eq!(classify_ext("ods"), FormatKind::Spreadsheet);
         assert_eq!(classify_ext("zip"), FormatKind::Archive);
         assert_eq!(classify_ext("xyz"), FormatKind::Unknown);
+        assert!(!is_supported_output("xlsx"));
+        assert!(is_supported_output("csv"));
     }
 
     #[test]

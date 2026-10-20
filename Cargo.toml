@@ -2,7 +2,7 @@
 name = "tummler"
 version = "0.1.0"
 edition = "2021"
-description = "One CLI that mixes any file into any format — images, video, documents, archives"
+description = "One CLI that mixes any file into any format — images, video, documents, spreadsheets, archives"
 authors = ["RUdolf1517 <rudolfzinovev@protonmail.com>"]
 license = "MIT"
 repository = "https://github.com/RUdolf1517/tummler"
@@ -36,6 +36,7 @@ zstd = "0.13"
 tempfile = "3.10"
 ctrlc = "3.4"
 libc = "0.2"
+calamine = "0.26"
 
 [profile.release]
 opt-level = 3

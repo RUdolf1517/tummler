@@ -5,7 +5,7 @@
 **טומלער** — *the one who stirs things up*
 
 One CLI that mixes any file into any format.  
-Images · audio · video · documents · archives.
+Images · audio · video · documents · spreadsheets · archives.
 
 [Install](#install) · [Usage](#usage) · [Formats](#formats) · [Name](#the-name)
 
@@ -23,6 +23,7 @@ tummler photo.heic jpg --max 1920
 tummler ./photos webp -r --skip-newer -o ./out
 tummler video.mp4 gif
 tummler report.docx pdf
+tummler table.xlsx csv
 tummler backup.zip tar.gz
 ```
 
@@ -93,6 +94,7 @@ tummler ./photos avif --overwrite
 tummler ./photos webp -r -o ./out -j 8
 tummler ./photos jpeg -r -n                                          # dry-run
 tummler ./photos webp -r --include '*.png' --exclude '*_raw*' --skip-newer -o ./out
+tummler ./sheets csv -o ./out
 ```
 
 TTY: spinner for one file, progress bar for a batch. `--quiet` and pipes stay silent. Then a size summary.
@@ -106,6 +108,17 @@ tummler photo.png webp --resize 50%
 tummler photo.png jpg --resize 800x       # width 800, height follows
 tummler video.mp4 webm -q 70              # crf
 tummler video.mp4 mp3 -q 85               # bitrate
+```
+
+### Spreadsheets
+
+Excel / ODS → csv or a padded text table. First sheet by default. No LibreOffice.
+
+```bash
+tummler table.xlsx csv
+tummler table.xlsx txt --sheet Sales
+tummler table.xlsx csv --all-sheets -o ./out
+tummler a.xlsx b.xls csv -o ./out/
 ```
 
 ### Overwrite
@@ -146,6 +159,8 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --check-deps
       --no-auto-install
   -y, --yes                 install deps without asking
+      --sheet <NAME>        spreadsheet sheet (`*` = all, one file each)
+      --all-sheets          every sheet → `table-Sheet1.csv`
       --ffmpeg-args <ARGS>
       --completions <SHELL> bash | zsh | fish | powershell | elvish
 ```
@@ -163,6 +178,7 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 | **Images** | png jpg gif bmp ico tiff webp avif heic pnm tga dds hdr qoi exr | Rust · HEIC via ffmpeg |
 | **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a opus … | ffmpeg |
 | **Documents** | pdf docx odt html md tex rst epub pptx csv json txt rtf | pandoc · LaTeX for PDF |
+| **Spreadsheets** | xlsx xlsm xlsb xls ods → csv txt | Rust (calamine) |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
 
 ```bash
@@ -181,10 +197,11 @@ tummler --completions fish > ~/.config/fish/completions/tummler.fish
 ## How it works
 
 ```
-tummler ─┬─ images      →  image crate
-         ├─ archives    →  zip / tar / gz / bz2 / xz / zstd
-         ├─ audio/video →  ffmpeg
-         └─ documents   →  pandoc
+tummler ─┬─ images       →  image crate
+         ├─ archives     →  zip / tar / gz / bz2 / xz / zstd
+         ├─ audio/video  →  ffmpeg
+         ├─ spreadsheets →  calamine (xlsx/xls/ods → csv/txt)
+         └─ documents    →  pandoc
 ```
 
 Image and archive batches run in parallel (`-j`). ffmpeg/pandoc are checked once, then the pool starts. Writes go through a staging file, then an atomic rename.

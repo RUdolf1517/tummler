@@ -13,6 +13,9 @@ Examples:
   tummler -- -file.png jpeg
   tummler ./photos webp -r --include '*.png' --skip-newer
   tummler photo.heic jpg --max 1920
+  tummler table.xlsx csv
+  tummler table.xlsx txt --sheet Sales
+  tummler table.xlsx csv --all-sheets
   tummler -i
 
 Exit codes:
@@ -133,6 +136,14 @@ pub struct Cli {
     /// Extra ffmpeg arguments
     #[arg(long = "ffmpeg-args", value_name = "ARGS")]
     pub ffmpeg_args: Option<String>,
+
+    /// Spreadsheet sheet (`*` = every sheet, each to its own file)
+    #[arg(long = "sheet", value_name = "NAME")]
+    pub sheet: Option<String>,
+
+    /// Every spreadsheet sheet → its own file (`table-Sheet1.csv`)
+    #[arg(long = "all-sheets", conflicts_with = "sheet")]
+    pub all_sheets: bool,
 
     /// Shell completion script
     #[arg(long = "completions", value_name = "SHELL", value_enum)]

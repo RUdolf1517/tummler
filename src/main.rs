@@ -34,6 +34,7 @@ struct Task {
     output: PathBuf,
     label_in: String,
     label_out: String,
+    sheet: Option<String>,
 }
 
 fn run(mut cli: cli::Cli) -> i32 {
@@ -154,6 +155,37 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_USAGE;
     }
 
+    let all_sheets = wants_all_sheets(&cli);
+    let sheet_name = if all_sheets {
+        None
+    } else {
+        cli.sheet.as_deref()
+    };
+    if all_sheets && stdout_mode {
+        ui::error("cannot use --all-sheets with stdout");
+        return ui::EXIT_USAGE;
+    }
+    if all_sheets && valid_inputs.iter().any(|p| util::is_stdio(p)) {
+        ui::error("cannot use --all-sheets with stdin");
+        return ui::EXIT_USAGE;
+    }
+    if all_sheets {
+        if let Some(ref out) = cli.output {
+            if !util::is_stdio(out) && !output_is_directory_hint(out, multiple) {
+                ui::error("--all-sheets: -o must be a directory (or omit -o)");
+                return ui::EXIT_USAGE;
+            }
+        }
+    }
+    if (cli.sheet.is_some() || cli.all_sheets)
+        && !valid_inputs.iter().any(|p| {
+            util::classify_ext(&util::get_extension(p).unwrap_or_default())
+                == util::FormatKind::Spreadsheet
+        })
+    {
+        ui::warn("--sheet/--all-sheets ignored (no spreadsheet inputs)");
+    }
+
     if multiple {
         if let Some(ref out) = cli.output {
             if !util::is_stdio(out) && out.exists() && out.is_file() {
@@ -169,23 +201,31 @@ fn run(mut cli: cli::Cli) -> i32 {
     if cli.dry_run {
         ui::info("dry-run, files will not be changed");
         for input in &valid_inputs {
-            let output = if stdout_mode {
-                PathBuf::from("-")
-            } else {
-                match util::resolve_output_path(input, &target_ext, cli.output.as_deref(), multiple)
-                {
-                    Ok(p) => p,
-                    Err(e) => {
-                        ui::error(format!("{}: {e}", input.display()));
-                        return ui::EXIT_USAGE;
-                    }
+            if stdout_mode {
+                println!("{} -> -", input.display());
+                continue;
+            }
+            let planned = match expand_outputs(
+                input,
+                &target_ext,
+                cli.output.as_deref(),
+                multiple,
+                all_sheets,
+                sheet_name,
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    ui::error(format!("{}: {e}", input.display()));
+                    return ui::EXIT_FAIL;
                 }
             };
-            let skip = cli.skip_newer && util::output_up_to_date(input, &output);
-            if skip {
-                println!("{} -> {}  skip", input.display(), output.display());
-            } else {
-                println!("{} -> {}", input.display(), output.display());
+            for (output, _) in planned {
+                let skip = cli.skip_newer && util::output_up_to_date(input, &output);
+                if skip {
+                    println!("{} -> {}  skip", input.display(), output.display());
+                } else {
+                    println!("{} -> {}", input.display(), output.display());
+                }
             }
         }
         return ui::EXIT_OK;
@@ -204,29 +244,38 @@ fn run(mut cli: cli::Cli) -> i32 {
 
     let mut tasks: Vec<Task> = Vec::with_capacity(valid_inputs.len());
     for input in &valid_inputs {
-        let output =
-            match util::resolve_output_path(input, &target_ext, cli.output.as_deref(), multiple) {
-                Ok(p) => p,
-                Err(e) => {
-                    ui::error(format!("{}: {e}", input.display()));
-                    failed += 1;
-                    continue;
-                }
-            };
-        if input == &output && !cli.overwrite && !cli.skip_newer {
-            ui::error(format!(
-                "source and destination are the same: {} (use --overwrite to replace in place)",
-                input.display()
-            ));
-            failed += 1;
-            continue;
+        let planned = match expand_outputs(
+            input,
+            &target_ext,
+            cli.output.as_deref(),
+            multiple,
+            all_sheets,
+            sheet_name,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                ui::error(format!("{}: {e}", input.display()));
+                failed += 1;
+                continue;
+            }
+        };
+        for (output, sheet) in planned {
+            if input == &output && !cli.overwrite && !cli.skip_newer {
+                ui::error(format!(
+                    "source and destination are the same: {} (use --overwrite to replace in place)",
+                    input.display()
+                ));
+                failed += 1;
+                continue;
+            }
+            tasks.push(Task {
+                label_in: input.display().to_string(),
+                label_out: output.display().to_string(),
+                input: input.clone(),
+                output,
+                sheet,
+            });
         }
-        tasks.push(Task {
-            label_in: input.display().to_string(),
-            label_out: output.display().to_string(),
-            input: input.clone(),
-            output,
-        });
     }
 
     if tasks.is_empty() {
@@ -403,6 +452,7 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
         assume_yes: spec.yes,
         verbose: spec.verbose,
         geometry: spec.geometry,
+        sheet: t.sheet.as_deref(),
     };
     match convert::convert_file(&t.input, &t.output, spec.target_ext, &opts) {
         Ok(()) => TaskResult::Ok {
@@ -410,6 +460,35 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
             bout: util::file_size(&t.output),
         },
         Err(e) => TaskResult::Err(e.to_string()),
+    }
+}
+
+fn wants_all_sheets(cli: &cli::Cli) -> bool {
+    cli.all_sheets || cli.sheet.as_deref() == Some("*")
+}
+
+fn output_is_directory_hint(out: &Path, multiple_inputs: bool) -> bool {
+    out.to_string_lossy().ends_with('/')
+        || out.to_string_lossy().ends_with('\\')
+        || (out.exists() && out.is_dir())
+        || multiple_inputs
+}
+
+fn expand_outputs(
+    input: &Path,
+    target_ext: &str,
+    output_arg: Option<&Path>,
+    multiple_inputs: bool,
+    all_sheets: bool,
+    sheet: Option<&str>,
+) -> Result<Vec<(PathBuf, Option<String>)>, String> {
+    let base = util::resolve_output_path(input, target_ext, output_arg, multiple_inputs)?;
+    let is_sheet = util::classify_ext(&util::get_extension(input).unwrap_or_default())
+        == util::FormatKind::Spreadsheet;
+    if all_sheets && is_sheet {
+        convert::spreadsheet::plan_outputs(input, &base, true, None).map_err(|e| e.to_string())
+    } else {
+        Ok(vec![(base, sheet.map(str::to_string))])
     }
 }
 
@@ -501,6 +580,7 @@ fn run_stdio(
     }
 
     let bin = util::file_size(&input_path);
+    let sheet = cli.sheet.clone();
     let opts = ConvertOpts {
         quality: cli.quality,
         overwrite: cli.overwrite || stdout_mode || (cli.skip_newer && output.exists()),
@@ -509,6 +589,7 @@ fn run_stdio(
         assume_yes: cli.yes,
         verbose: cli.verbose,
         geometry,
+        sheet: sheet.as_deref().filter(|s| *s != "*"),
     };
 
     match convert::convert_file(&input_path, &output, target_ext, &opts) {
