@@ -7,16 +7,13 @@ mod ui;
 mod util;
 
 use clap::{CommandFactory, Parser};
-use colored::Colorize;
-use indicatif::{ProgressBar, ProgressStyle};
-use std::env;
+use rayon::prelude::*;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn main() {
-    let raw_args: Vec<String> = env::args().collect();
-    let processed = cli::preprocess_args(raw_args);
-    let cli = cli::Cli::parse_from(processed);
+    let cli = cli::Cli::parse();
 
     ui::init_color(cli.color, cli.no_color);
     ui::set_quiet(cli.quiet);
@@ -25,6 +22,13 @@ fn main() {
     if code != ui::EXIT_OK {
         std::process::exit(code);
     }
+}
+
+struct Task {
+    input: PathBuf,
+    output: PathBuf,
+    label_in: String,
+    label_out: String,
 }
 
 fn run(cli: cli::Cli) -> i32 {
@@ -45,7 +49,7 @@ fn run(cli: cli::Cli) -> i32 {
     }
 
     if cli.inputs.is_empty() {
-        ui::error("укажите входной файл: tummler input.png -jpeg");
+        ui::error("укажите входной файл: tummler input.png -f jpeg");
         ui::info("tummler --help — справка");
         return ui::EXIT_USAGE;
     }
@@ -74,7 +78,7 @@ fn run(cli: cli::Cli) -> i32 {
         return ui::EXIT_FAIL;
     }
 
-    let mut failed = 0;
+    let mut failed = 0usize;
     let mut valid_inputs: Vec<PathBuf> = Vec::new();
     for p in &inputs {
         if util::is_stdio(p) {
@@ -140,60 +144,20 @@ fn run(cli: cli::Cli) -> i32 {
         return ui::EXIT_OK;
     }
 
-    let show_progress = multiple && !cli.verbose && !cli.quiet && ui::stderr_is_tty();
-    let pb = if show_progress {
-        let bar = ProgressBar::new(valid_inputs.len() as u64);
-        bar.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-                .unwrap()
-                .progress_chars("█▓▒░─"),
-        );
-        Some(bar)
-    } else {
-        None
-    };
+    if let Err(e) = convert::prefetch_deps(&valid_inputs, &target_ext, cli.no_auto_install, cli.yes)
+    {
+        ui::error(e);
+        return ui::EXIT_FAIL;
+    }
 
-    let mut success = 0;
+    let has_stdio = stdout_mode || valid_inputs.iter().any(|p| util::is_stdio(p));
+    if has_stdio {
+        return run_stdio(cli, &valid_inputs, &target_ext, stdout_mode, failed);
+    }
 
+    let mut tasks: Vec<Task> = Vec::with_capacity(valid_inputs.len());
     for input in &valid_inputs {
-        let mut _stdin_guard = None;
-        let input_path: PathBuf = if util::is_stdio(input) {
-            match materialize_stdin() {
-                Ok(tmp) => {
-                    let p = tmp.path().to_path_buf();
-                    _stdin_guard = Some(tmp);
-                    p
-                }
-                Err(e) => {
-                    ui::error(format!("не удалось прочитать stdin: {e}"));
-                    failed += 1;
-                    continue;
-                }
-            }
-        } else {
-            input.clone()
-        };
-
-        let mut _stdout_guard = None;
-        let output = if stdout_mode {
-            match tempfile::Builder::new()
-                .prefix("tummler-out-")
-                .suffix(&format!(".{target_ext}"))
-                .tempfile()
-            {
-                Ok(tmp) => {
-                    let p = tmp.path().to_path_buf();
-                    _stdout_guard = Some(tmp);
-                    p
-                }
-                Err(e) => {
-                    ui::error(format!("не удалось создать временный файл: {e}"));
-                    failed += 1;
-                    continue;
-                }
-            }
-        } else {
+        let output =
             match util::resolve_output_path(input, &target_ext, cli.output.as_deref(), multiple) {
                 Ok(p) => p,
                 Err(e) => {
@@ -201,24 +165,8 @@ fn run(cli: cli::Cli) -> i32 {
                     failed += 1;
                     continue;
                 }
-            }
-        };
-
-        if cli.verbose {
-            ui::info(format!(
-                "{} → {}",
-                input.display(),
-                if stdout_mode {
-                    "-".to_string()
-                } else {
-                    output.display().to_string()
-                }
-            ));
-        } else if let Some(ref bar) = pb {
-            bar.set_message(format!("{} → {}", input.display(), output.display()));
-        }
-
-        if !stdout_mode && input_path == output {
+            };
+        if input == &output {
             ui::warn(format!(
                 "исходник и выход совпадают, пропуск: {}",
                 input.display()
@@ -226,53 +174,140 @@ fn run(cli: cli::Cli) -> i32 {
             failed += 1;
             continue;
         }
-
-        match convert::convert_file(
-            &input_path,
-            &output,
-            &target_ext,
-            cli.quality,
-            cli.overwrite || stdout_mode,
-            cli.ffmpeg_args.as_deref(),
-            cli.no_auto_install,
-            cli.yes,
-            cli.verbose,
-        ) {
-            Ok(()) => {
-                if stdout_mode {
-                    if let Err(e) = emit_stdout(&output) {
-                        ui::error(format!("не удалось записать stdout: {e}"));
-                        failed += 1;
-                        continue;
-                    }
-                } else if cli.verbose {
-                    ui::info(format!("готово {}", output.display().to_string().green()));
-                }
-                if let Some(ref bar) = pb {
-                    bar.inc(1);
-                }
-                success += 1;
-            }
-            Err(e) => {
-                ui::error(format!("{}: {e}", input.display()));
-                failed += 1;
-                if let Some(ref bar) = pb {
-                    bar.inc(1);
-                }
-            }
-        }
+        tasks.push(Task {
+            label_in: input.display().to_string(),
+            label_out: output.display().to_string(),
+            input: input.clone(),
+            output,
+        });
     }
 
-    if let Some(bar) = pb {
-        bar.finish_and_clear();
+    if tasks.is_empty() {
+        return ui::EXIT_FAIL;
     }
 
-    if (multiple || cli.verbose) && !cli.quiet {
-        if failed == 0 {
-            ui::info(format!("успешно: {success}"));
+    let jobs = resolve_jobs(cli.jobs, tasks.len());
+    let ffmpeg_args = cli.ffmpeg_args.clone();
+    let quality = cli.quality;
+    let overwrite = cli.overwrite;
+    let no_auto = cli.no_auto_install;
+    let yes = cli.yes;
+    let verbose = cli.verbose;
+    let target_ext_owned = target_ext.clone();
+
+    let success = AtomicUsize::new(0);
+    let fail_extra = AtomicUsize::new(0);
+
+    if jobs == 1 {
+        let show_bar = multiple && !verbose;
+        let bar = if show_bar {
+            ui::batch_bar(tasks.len() as u64)
         } else {
-            ui::info(format!("успешно: {success}, ошибок: {failed}"));
+            None
+        };
+        let spin = if !multiple && !verbose {
+            tasks
+                .first()
+                .and_then(|t| ui::spinner(format!("{} → {}", t.label_in, t.label_out)))
+        } else {
+            None
+        };
+
+        for t in &tasks {
+            if verbose {
+                ui::info(format!("{} → {}", t.label_in, t.label_out));
+            } else if let Some(ref bar) = bar {
+                bar.set_message(format!("{} → {}", t.label_in, t.label_out));
+            }
+            match convert::convert_file(
+                &t.input,
+                &t.output,
+                &target_ext_owned,
+                quality,
+                overwrite,
+                ffmpeg_args.as_deref(),
+                no_auto,
+                yes,
+                verbose,
+            ) {
+                Ok(()) => {
+                    success.fetch_add(1, Ordering::Relaxed);
+                    if verbose {
+                        ui::info(format!("готово {}", t.label_out));
+                    }
+                }
+                Err(e) => {
+                    ui::error(format!("{}: {e}", t.label_in));
+                    fail_extra.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            if let Some(ref bar) = bar {
+                bar.inc(1);
+            }
         }
+
+        if let Some(ref bar) = bar {
+            let s = success.load(Ordering::Relaxed);
+            ui::finish_ok(Some(bar), format!("готово {s}/{}", tasks.len()));
+        } else if let Some(ref sp) = spin {
+            if fail_extra.load(Ordering::Relaxed) == 0 {
+                ui::finish_ok(Some(sp), format!("{} → {}", tasks[0].label_in, tasks[0].label_out));
+            } else {
+                ui::finish_clear(Some(sp));
+            }
+        }
+    } else {
+        let bar = if !verbose {
+            ui::batch_bar(tasks.len() as u64)
+        } else {
+            None
+        };
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(jobs)
+            .build()
+            .expect("thread pool");
+        pool.install(|| {
+            tasks.par_iter().for_each(|t| {
+                if verbose {
+                    ui::info(format!("{} → {}", t.label_in, t.label_out));
+                } else if let Some(ref bar) = bar {
+                    bar.set_message(format!("{} → {}", t.label_in, t.label_out));
+                }
+                match convert::convert_file(
+                    &t.input,
+                    &t.output,
+                    &target_ext_owned,
+                    quality,
+                    overwrite,
+                    ffmpeg_args.as_deref(),
+                    no_auto,
+                    yes,
+                    verbose,
+                ) {
+                    Ok(()) => {
+                        success.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(e) => {
+                        ui::error(format!("{}: {e}", t.label_in));
+                        fail_extra.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                if let Some(ref bar) = bar {
+                    bar.inc(1);
+                }
+            });
+        });
+        if let Some(ref bar) = bar {
+            let s = success.load(Ordering::Relaxed);
+            ui::finish_ok(Some(bar), format!("готово {s}/{}", tasks.len()));
+        }
+    }
+
+    failed += fail_extra.load(Ordering::Relaxed);
+    let success = success.load(Ordering::Relaxed);
+
+    if failed > 0 && !cli.quiet {
+        ui::info(format!("успешно: {success}, ошибок: {failed}"));
     }
 
     if failed > 0 {
@@ -280,6 +315,124 @@ fn run(cli: cli::Cli) -> i32 {
     } else {
         ui::EXIT_OK
     }
+}
+
+fn run_stdio(
+    cli: cli::Cli,
+    valid_inputs: &[PathBuf],
+    target_ext: &str,
+    stdout_mode: bool,
+    mut failed: usize,
+) -> i32 {
+    let mut success = 0;
+    let input = &valid_inputs[0];
+
+    let mut _stdin_guard = None;
+    let input_path: PathBuf = if util::is_stdio(input) {
+        match materialize_stdin() {
+            Ok(tmp) => {
+                let p = tmp.path().to_path_buf();
+                _stdin_guard = Some(tmp);
+                p
+            }
+            Err(e) => {
+                ui::error(format!("не удалось прочитать stdin: {e}"));
+                return ui::EXIT_FAIL;
+            }
+        }
+    } else {
+        input.clone()
+    };
+
+    let mut _stdout_guard = None;
+    let output = if stdout_mode {
+        match tempfile::Builder::new()
+            .prefix("tummler-out-")
+            .suffix(&format!(".{target_ext}"))
+            .tempfile()
+        {
+            Ok(tmp) => {
+                let p = tmp.path().to_path_buf();
+                _stdout_guard = Some(tmp);
+                p
+            }
+            Err(e) => {
+                ui::error(format!("не удалось создать временный файл: {e}"));
+                return ui::EXIT_FAIL;
+            }
+        }
+    } else {
+        match util::resolve_output_path(input, target_ext, cli.output.as_deref(), false) {
+            Ok(p) => p,
+            Err(e) => {
+                ui::error(format!("{}: {e}", input.display()));
+                return ui::EXIT_USAGE;
+            }
+        }
+    };
+
+    let label_out = if stdout_mode {
+        "-".to_string()
+    } else {
+        output.display().to_string()
+    };
+    let label_in = input.display().to_string();
+    let spin = if !cli.verbose {
+        ui::spinner(format!("{label_in} → {label_out}"))
+    } else {
+        None
+    };
+
+    if cli.verbose {
+        ui::info(format!("{label_in} → {label_out}"));
+    }
+
+    match convert::convert_file(
+        &input_path,
+        &output,
+        target_ext,
+        cli.quality,
+        cli.overwrite || stdout_mode,
+        cli.ffmpeg_args.as_deref(),
+        cli.no_auto_install,
+        cli.yes,
+        cli.verbose,
+    ) {
+        Ok(()) => {
+            if stdout_mode {
+                if let Err(e) = emit_stdout(&output) {
+                    ui::finish_clear(spin.as_ref());
+                    ui::error(format!("не удалось записать stdout: {e}"));
+                    return ui::EXIT_FAIL;
+                }
+            }
+            success += 1;
+            ui::finish_ok(spin.as_ref(), format!("{label_in} → {label_out}"));
+        }
+        Err(e) => {
+            ui::finish_clear(spin.as_ref());
+            ui::error(format!("{label_in}: {e}"));
+            failed += 1;
+        }
+    }
+
+    if failed > 0 {
+        ui::EXIT_FAIL
+    } else {
+        let _ = success;
+        ui::EXIT_OK
+    }
+}
+
+fn resolve_jobs(requested: usize, nfiles: usize) -> usize {
+    if nfiles <= 1 {
+        return 1;
+    }
+    let auto = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let n = if requested == 0 { auto } else { requested };
+    n.min(nfiles).max(1)
 }
 
 fn resolve_format(cli: &cli::Cli) -> Result<String, i32> {
@@ -293,7 +446,7 @@ fn resolve_format(cli: &cli::Cli) -> Result<String, i32> {
             }
         }
     }
-    ui::error("укажите формат: tummler input.png -jpeg");
+    ui::error("укажите формат: tummler input.png -f jpeg");
     ui::info("или: tummler input.png --format jpeg");
     ui::info("или: tummler input.png -o output.webp");
     Err(ui::EXIT_USAGE)

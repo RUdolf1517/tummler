@@ -84,7 +84,10 @@ fn pack_plain_file(input: &Path, output: &Path, ext: &str) -> Result<(), Tummler
 }
 
 fn compress_file(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerError> {
-    let mut input_file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let mut input_file = io::BufReader::with_capacity(
+        64 * 1024,
+        File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?,
+    );
     let output_file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
     match ext {
         "gz" => {
@@ -295,7 +298,10 @@ fn pack_zip(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
             zip.add_directory(&name_str, options).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
         } else {
             zip.start_file(&name_str, options).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
-            let mut f = File::open(path).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            let mut f = io::BufReader::with_capacity(
+                64 * 1024,
+                File::open(path).map_err(|e| TummlerError::IoError(e.to_string()))?,
+            );
             io::copy(&mut f, &mut zip).map_err(|e| TummlerError::IoError(e.to_string()))?;
         }
     }
@@ -375,13 +381,10 @@ fn pack_zst(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 fn collect_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            out.push(path.clone());
-            if path.is_dir() {
-                collect_files_recursive(&path, out);
-            }
+    for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path != dir {
+            out.push(path.to_path_buf());
         }
     }
 }

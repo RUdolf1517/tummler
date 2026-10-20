@@ -3,13 +3,13 @@
 Универсальный конвертер файлов — один CLI для всего. Картинки, аудио/видео, документы и архивы.
 
 ```bash
-tummler photo.png -jpeg              # photo.png → photo.jpeg
-tummler photo.png -webp -q 80        # с качеством
-tummler video.mp4 -gif                # через ffmpeg
-tummler doc.docx -pdf                 # через pandoc
-tummler archive.zip -tar.gz           # перепаковка
-tummler ./photos -webp -r -o ./out    # батч + рекурсия
-tummler a.png b.jpg -avif -o ./out    # несколько файлов
+tummler photo.png -f jpeg            # photo.png → photo.jpeg
+tummler photo.png -f webp -q 80      # с качеством
+tummler video.mp4 -f gif             # через ffmpeg
+tummler doc.docx -f pdf              # через pandoc
+tummler archive.zip -f tar.gz        # перепаковка
+tummler ./photos -f webp -r -o ./out # батч + рекурсия
+tummler a.png b.jpg -f avif -o ./out # несколько файлов
 ```
 
 Поддерживает **macOS** и **Linux** (x86_64 и ARM).
@@ -66,11 +66,12 @@ tummler [OPTIONS] [INPUT]...
   [INPUT]...                Файлы или директории. «-» = stdin
 
 Опции:
-  -f, --format <EXT>        Целевой формат (или сахар `-jpeg`)
+  -f, --format <EXT>        Целевой формат
   -o, --output <PATH>       Выходной файл или директория. «-» = stdout
   -q, --quality <1-100>     Качество lossy-форматов
       --overwrite, --force  Перезаписать существующие файлы
   -r, --recursive           Рекурсивный обход директорий
+  -j, --jobs <N>            Параллельные задачи (0 = число CPU)
   -v, --verbose             Подробный лог на stderr
       --quiet               Только ошибки (для скриптов)
   -n, --dry-run             Показать план, ничего не писать
@@ -88,63 +89,48 @@ tummler [OPTIONS] [INPUT]...
 
 Формат можно не указывать, если он есть в `-o`: `tummler in.png -o out.webp`.
 
-### Синтаксис `-расширение`
-
-Главная фишка — короткий синтаксис `tummler файл -jpeg` без лишних флагов:
-
-```bash
-tummler image.png -jpeg          # → image.jpeg рядом с исходником
-tummler image.png -webp -o out/  # → out/image.webp
-tummler video.mp4 -mp3            # извлечь аудио
-tummler archive.zip -tar.gz       # перепаковка
-```
-
-Сахар `-jpeg` срабатывает **только для известных форматов**, чтобы не ломать POSIX: `-rvn` это `-r -v -n`, а не формат `rvn`.
-
-`-jpeg` пишет `.jpeg`, `-jpg` пишет `.jpg`. Классически:
+`-f jpeg` пишет `.jpeg`, `-f jpg` пишет `.jpg`.
 
 ```bash
 tummler image.png --format jpeg
 tummler image.png -f webp
 tummler image.png -o image.webp          # формат из расширения -o
-tummler -- -weird.png -jpeg              # файл, имя которого начинается с -
-cat in.png | tummler - -jpeg > out.jpeg  # unix-фильтр
+tummler -- -file.png -f jpeg             # файл, имя которого начинается с -
+cat in.png | tummler - -f jpeg > out.jpeg
 ```
 
 ### Батч-конвертация
 
 ```bash
-# Несколько файлов в директорию
-tummler a.png b.jpg c.bmp -webp -o ./converted/
+# Несколько файлов в директорию (параллельно)
+tummler a.png b.jpg c.bmp -f webp -o ./converted/
 
 # Вся директория
-tummler ./photos -avif --overwrite
+tummler ./photos -f avif --overwrite
 
-# Рекурсивно со вложенными папками
-tummler ./photos -webp -r -o ./out
+# Рекурсивно, 8 потоков
+tummler ./photos -f webp -r -o ./out -j 8
 
 # Dry-run — план на stdout (можно пайпить)
-tummler ./photos -jpeg -r -n
-
-# С прогресс-баром и итогами
-tummler ./huge-folder -webp -r
-# █▓▒░  [00:00:12] [████████████░░░░░░░░] 142/300 photo123.png → photo123.webp
+tummler ./photos -f jpeg -r -n
 ```
+
+В TTY tummler показывает спиннер на одном файле и прогресс-бар на батче. В пайпах и с `--quiet` анимация выключена.
 
 ### Качество
 
 ```bash
-tummler photo.png -jpeg -q 90    # высокое качество jpeg (дефолт 90)
-tummler photo.png -webp -q 80    # webp
-tummler video.mp4 -webm -q 70    # видео (crf)
-tummler video.mp4 -mp3 -q 85     # аудио (битрейт 256k)
+tummler photo.png -f jpeg -q 90    # высокое качество jpeg (дефолт 90)
+tummler photo.png -f webp -q 80
+tummler video.mp4 -f webm -q 70    # видео (crf)
+tummler video.mp4 -f mp3 -q 85     # аудио (битрейт 256k)
 ```
 
 ### Перезапись
 
 ```bash
-tummler img.png -jpeg              # ошибка если img.jpeg уже есть
-tummler img.png -jpeg --overwrite # перезаписать
+tummler img.png -f jpeg              # ошибка если img.jpeg уже есть
+tummler img.png -f jpeg --overwrite  # перезаписать
 ```
 
 ## Поддерживаемые форматы
@@ -172,43 +158,26 @@ tummler --list-formats
 
 ### Автоустановка
 
-Если зависимость не найдена, tummler предложит установить её автоматически:
-
-```
-⚠ ffmpeg не найден в PATH.
-Установите ffmpeg:
-  macOS:          brew install ffmpeg
-  Debian/Ubuntu:  sudo apt install ffmpeg
-
-Запустить `brew install ffmpeg` для установки ffmpeg? [Y/n]: Y
-→ Запускаю: brew install ffmpeg
-✓ ffmpeg успешно установлен!
-```
-
-Отключить автоустановку:
+Если зависимость не найдена, tummler предложит установить её автоматически в TTY. В скриптах: `--yes` чтобы поставить, `--no-auto-install` чтобы никогда не ставить.
 
 ```bash
-tummler video.mp4 -gif --no-auto-install
-# или
-tummler --check-deps   # только проверить
+tummler video.mp4 -f gif --no-auto-install
+tummler --check-deps
 ```
-
-Автоустановка спрашивает подтверждение только в интерактивном терминале (TTY). В скриптах: `--yes` чтобы поставить, `--no-auto-install` чтобы никогда не ставить.
 
 ## Соглашения CLI
 
-Ориентир — [POSIX](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap12.html), GNU и [clig.dev](https://clig.dev/):
+Ориентир — POSIX, GNU и [clig.dev](https://clig.dev/):
 
 | Правило | Как у tummler |
 |---------|----------------|
-| Успех молча, как `cp`/`mv` | Чекмарки только с `-v`; прогресс — на stderr и только в TTY |
-| stdout = данные, stderr = сообщения | `✓` больше не попадает в пайп; dry-run пишет `src -> dst` на stdout |
+| stdout = данные, stderr = сообщения | прогресс и спиннер на stderr, только в TTY |
 | Коды выхода | `0` успех, `1` ошибка конвертации, `2` неверные аргументы |
 | Цвет | `NO_COLOR`, `FORCE_COLOR`, `TERM=dumb`, `--color`, `--no-color` |
-| `--` конец опций | `tummler -- -file.png -jpeg` |
-| stdin/stdout | `tummler - -jpeg` читает stdin, без `-o` пишет stdout |
+| `--` конец опций | `tummler -- -file.png -f jpeg` |
+| stdin/stdout | `tummler - -f jpeg` читает stdin, без `-o` пишет stdout |
 | Короткие флаги | склеиваются: `-rvn` |
-| `--quiet` | только ошибки; `-q` занят качеством (как у cwebp/convert) |
+| `--quiet` | только ошибки; `-q` занят качеством |
 
 Ошибки в GNU-стиле: `tummler: файл не найден: foo.png`.
 
@@ -221,70 +190,54 @@ tummler --completions bash | sudo tee /etc/bash_completion.d/tummler
 # zsh
 mkdir -p ~/.zfunc
 tummler --completions zsh > ~/.zfunc/_tummler
-# в ~/.zshrc: fpath+=~/.zfunc && autoload -Uz compinit && compinit
 
 # fish
 tummler --completions fish > ~/.config/fish/completions/tummler.fish
-```
-
-Ручная проверка:
-
-```bash
-tummler --check-deps
-# Зависимости tummler:
-#   ffmpeg        ✓ установлен  — Аудио/видео конвертация
-#   ffprobe       ○ не найден (опционально)  — Анализ медиафайлов
-#   pandoc        ✓ установлен  — Конвертация документов
-#   Нативные:     картинки (image crate), архивы (zip/tar)
 ```
 
 ## Примеры
 
 ```bash
 # Картинки
-tummler screenshot.png -jpeg -q 85 -o compressed.jpg
-tummler logo.png -ico
-tummler ./wallpapers -avif -r -o ./avif
+tummler screenshot.png -f jpeg -q 85 -o compressed.jpg
+tummler logo.png -f ico
+tummler ./wallpapers -f avif -r -o ./avif -j 8
 
 # Видео/аудио
-tummler input.mp4 -webm
-tummler input.avi -mp4 --ffmpeg-args "-crf 23 -preset fast"
-tummler podcast.wav -mp3 -q 90
-tummler video.mp4 -gif                   # видео → gif
+tummler input.mp4 -f webm
+tummler input.avi -f mp4 --ffmpeg-args "-crf 23 -preset fast"
+tummler podcast.wav -f mp3 -q 90
+tummler video.mp4 -f gif
 
 # Документы
-tummler report.docx -pdf
-tummler slides.pptx -pdf
-tummler README.md -html -o site.html
-tummler manual.md -epub
+tummler report.docx -f pdf
+tummler README.md -f html -o site.html
 
 # Архивы
-tummler backup.zip -tar.gz
-tummler data.tar.bz2 -zip
-tummler huge.log -gz
+tummler backup.zip -f tar.gz
+tummler huge.log -f gz
 
-# Комбинированные
-tummler . -webp -r --overwrite -q 80     # все картинки в текущей директории
-tummler a.png b.jpg c.tiff -png -o ./pngs --overwrite
+# Батч
+tummler . -f webp -r --overwrite -q 80
+tummler a.png b.jpg c.tiff -f png -o ./pngs --overwrite
 ```
 
 ## Как это работает
 
 ```
-tummler ─┬─ Картинки  →  image crate (нативно, без внешних зависимостей)
+tummler ─┬─ Картинки  →  image crate (нативно)
          ├─ Архивы    →  zip/tar/flate2/bzip2/xz2/zstd (нативно)
          ├─ Аудио/Видео → ffmpeg (подпроцесс)
          └─ Документы →  pandoc (подпроцесс)
 ```
 
-Архитектура "оркестратор" — как у [MCVT](https://dev.to/arshalaromal/i-got-tired-of-googling-ffmpeg-flags-so-i-built-a-universal-cli-converter-in-rust-45l9) и [image-converter-rs](https://github.com/JohnDotOwl/image-converter-rs): используем лучшие инструменты для каждой категории, а tummler даёт единый интерфейс.
+Батч картинок и архивов идёт параллельно (`-j`). Зависимости ffmpeg/pandoc проверяются один раз до старта пула.
 
 ## Разработка
 
 ```bash
-cargo run -- photo.png -jpeg --dry-run
+cargo run -- photo.png -f jpeg --dry-run
 cargo run -- --list-formats
-cargo run -- --check-deps
 cargo test
 cargo build --release
 ```

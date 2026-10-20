@@ -16,7 +16,7 @@ pub fn normalize_ext(ext: &str) -> String {
 }
 
 /// Расширение для имени выходного файла.
-/// Сохраняем форму, которую указал пользователь: `-jpeg` → `.jpeg`, не `.jpg`.
+/// Сохраняем форму, которую указал пользователь: `-f jpeg` → `.jpeg`, не `.jpg`.
 /// Схлопываем только настоящие алиасы (`tgz` → `tar.gz`).
 pub fn output_extension(ext: &str) -> String {
     let ext = ext.trim().trim_start_matches('.').to_lowercase();
@@ -265,13 +265,13 @@ pub fn print_supported_formats() {
     println!();
 
     println!("{}", "Примеры:".dimmed());
-    println!("  {}  {}", "tummler photo.png -jpeg".dimmed(), "→ photo.jpeg".dimmed());
-    println!("  {}  {}", "tummler video.mp4 -webm -q 80".dimmed(), "→ video.webm".dimmed());
-    println!("  {}  {}", "tummler doc.docx -pdf".dimmed(), "→ doc.pdf".dimmed());
-    println!("  {}  {}", "tummler archive.zip -tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
+    println!("  {}  {}", "tummler photo.png -f jpeg".dimmed(), "→ photo.jpeg".dimmed());
+    println!("  {}  {}", "tummler video.mp4 -f webm -q 80".dimmed(), "→ video.webm".dimmed());
+    println!("  {}  {}", "tummler doc.docx -f pdf".dimmed(), "→ doc.pdf".dimmed());
+    println!("  {}  {}", "tummler archive.zip -f tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
     println!(
         "  {}  {}",
-        "tummler ./photos -webp -r -o ./out".dimmed(),
+        "tummler ./photos -f webp -r -o ./out".dimmed(),
         "→ батч + рекурсия".dimmed()
     );
 }

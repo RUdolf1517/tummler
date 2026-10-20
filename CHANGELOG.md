@@ -2,23 +2,14 @@
 
 ## 0.1.0 — 2026-10-20
 
-- CLI по POSIX/GNU/clig.dev: коды 0/1/2, stdout vs stderr, NO_COLOR, `--quiet`, `-n/--dry-run`, `--force`, `--`
-- `-jpeg` только для известных форматов — `-rvn` больше не съедается как формат
+- Убран сахар `-jpeg`; формат только через `-f/--format` или `-o file.ext`
+- Спиннер на одном файле, прогресс-бар на батче (TTY, не в `--quiet`)
+- Параллельный батч: `-j/--jobs` (по умолчанию число CPU), prefetch ffmpeg/pandoc
+- Буферы 256 KiB на JPEG, walkdir + BufReader на архивах, `panic = abort` в release
+- CLI по POSIX/GNU/clig.dev: коды 0/1/2, stdout vs stderr, NO_COLOR, `--quiet`, `-n`, `--force`, `--`
 - Формат из `-o`: `tummler in.png -o out.webp`
-- Unix-фильтр: `cat in.png | tummler - -jpeg > out.jpeg`
-- Успех молча (как `cp`); прогресс только на stderr в TTY
-
-- Первый релиз
-- Картинки (image crate): png, jpg, gif, bmp, ico, tiff, webp, avif, pnm, tga, dds, hdr, farbfeld, qoi, exr
-- Аудио/видео (ffmpeg): mp4, avi, mkv, mov, webm, mp3, wav, flac, aac, ogg, m4a, opus и др.
-- Документы (pandoc): pdf, docx, odt, html, md, tex, rst, epub, pptx
-- Архивы (нативно): zip, tar, tar.gz, tar.bz2, tar.xz, tar.zst, gz, bz2, xz, zst
-- Синтаксис `tummler file.png -jpeg` + `--format` (выход `file.jpeg`, не `.jpg`)
-- Батч, рекурсия, качество, overwrite, dry-run, прогресс-бар
-- Автоустановка ffmpeg/pandoc с подтверждением в TTY (brew/apt/dnf/pacman/zypper)
-- Сжатие обычных файлов: `tummler huge.log -gz`
-- Атомарная запись через staging-файл (ошибка не затирает существующий выход)
-- `--completions` для bash/zsh/fish/powershell/elvish
-- `--list-formats` / `--check-deps` работают без входного файла
-- Защита от zip-slip при распаковке
+- Unix-фильтр: `cat in.png | tummler - -f jpeg > out.jpeg`
+- Картинки, медиа (ffmpeg), документы (pandoc), архивы (zip/tar/gz/…)
+- Автоустановка ffmpeg/pandoc в TTY; `--completions`
+- Zip-slip защита, атомарная запись через staging-файл
 - Релизы для macOS (Intel/ARM) и Linux (x86_64/ARM64)

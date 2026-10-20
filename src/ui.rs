@@ -1,12 +1,16 @@
 use clap::ValueEnum;
 use colored::Colorize;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, IsTerminal};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 /// 0 = успех, 1 = ошибка выполнения, 2 = неверные аргументы (как у GNU).
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_FAIL: i32 = 1;
 pub const EXIT_USAGE: i32 = 2;
+
+const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "✔"];
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum ColorWhen {
@@ -50,6 +54,10 @@ pub fn stderr_is_tty() -> bool {
     io::stderr().is_terminal()
 }
 
+pub fn wants_animation() -> bool {
+    !is_quiet() && stderr_is_tty()
+}
+
 pub fn error(msg: impl std::fmt::Display) {
     eprintln!("{} {msg}", "tummler:".red());
 }
@@ -71,4 +79,50 @@ pub fn info(msg: impl std::fmt::Display) {
 pub fn usage_exit(msg: impl std::fmt::Display) -> ! {
     error(msg);
     std::process::exit(EXIT_USAGE);
+}
+
+/// Спиннер для одной конвертации.
+pub fn spinner(msg: impl Into<String>) -> Option<ProgressBar> {
+    if !wants_animation() {
+        return None;
+    }
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(SPINNER_FRAMES)
+            .template("{spinner:.cyan} {msg}")
+            .expect("spinner template"),
+    );
+    pb.enable_steady_tick(Duration::from_millis(70));
+    pb.set_message(msg.into());
+    Some(pb)
+}
+
+/// Прогресс-бар батча со спиннером.
+pub fn batch_bar(len: u64) -> Option<ProgressBar> {
+    if !wants_animation() {
+        return None;
+    }
+    let pb = ProgressBar::new(len);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .tick_strings(SPINNER_FRAMES)
+            .template("{spinner:.cyan} {elapsed_precise} [{bar:28.cyan/blue}] {pos}/{len} {per_sec} {wide_msg}")
+            .expect("bar template")
+            .progress_chars("█▉▊▋▌▍▎▏ "),
+    );
+    pb.enable_steady_tick(Duration::from_millis(80));
+    Some(pb)
+}
+
+pub fn finish_ok(pb: Option<&ProgressBar>, msg: impl Into<String>) {
+    if let Some(pb) = pb {
+        pb.finish_with_message(msg.into());
+    }
+}
+
+pub fn finish_clear(pb: Option<&ProgressBar>) {
+    if let Some(pb) = pb {
+        pb.finish_and_clear();
+    }
 }
