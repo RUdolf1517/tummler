@@ -52,8 +52,7 @@ Intel Mac: `brew install --HEAD tummler` (builds with Rust).
 **Cargo** (needs [Rust 1.74+](https://rustup.rs))
 
 ```bash
-cargo install tummler
-# or, from git:
+# from git:
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
