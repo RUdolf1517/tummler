@@ -81,10 +81,10 @@ fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
     let bytes = std::fs::read(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
     let pdf = Pdf::new(bytes).map_err(|e| TummlerError::OfficeError(e.to_string()))?;
     let pages = pdf.pages();
-    if pages.is_empty() {
+    let n = pages.len();
+    if n == 0 {
         return Err(TummlerError::OfficeError("empty PDF".into()));
     }
-    let n = pages.len();
 
     let cache = RenderCache::new();
     let interpreter = InterpreterSettings::default();
@@ -95,9 +95,27 @@ fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
         bg_color: WHITE,
     };
 
+    let raster = |idx: usize, page| -> Result<(u32, u32, Vec<u8>), TummlerError> {
+        let rendered = render(
+            page,
+            &cache,
+            &interpreter,
+            &render_settings,
+            &pixmap_settings,
+        );
+        let w = u32::from(rendered.width());
+        let h = u32::from(rendered.height());
+        let png = rendered
+            .into_png()
+            .map_err(|e| TummlerError::OfficeError(format!("page {}: {e}", idx + 1)))?;
+        Ok((w, h, png))
+    };
+
     let mut iter = pages.iter().enumerate();
-    let (_, first) = iter.next().expect("non-empty");
-    let (w0, h0, png0) = raster_page(0, first, &cache, &interpreter, &render_settings, &pixmap_settings)?;
+    let Some((_, first)) = iter.next() else {
+        return Err(TummlerError::OfficeError("empty PDF".into()));
+    };
+    let (w0, h0, png0) = raster(0, first)?;
     let cx = px_to_emu(w0);
     let cy = px_to_emu(h0);
 
@@ -106,43 +124,13 @@ fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
     drop(png0);
 
     for (idx, page) in iter {
-        let (w, h, png) = raster_page(
-            idx,
-            page,
-            &cache,
-            &interpreter,
-            &render_settings,
-            &pixmap_settings,
-        )?;
+        let (w, h, png) = raster(idx, page)?;
         append_slide(&mut zip, idx + 1, w, h, &png, cx, cy)?;
     }
 
     zip.finish()
         .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
     Ok(())
-}
-
-fn raster_page(
-    idx: usize,
-    page: &hayro::hayro_syntax::page::Page<'_>,
-    cache: &RenderCache<'_>,
-    interpreter: &InterpreterSettings,
-    render_settings: &RenderSettings,
-    pixmap_settings: &PixmapSettings,
-) -> Result<(u32, u32, Vec<u8>), TummlerError> {
-    let rendered = render(
-        page,
-        cache,
-        interpreter,
-        render_settings,
-        pixmap_settings,
-    );
-    let w = u32::from(rendered.width());
-    let h = u32::from(rendered.height());
-    let png = rendered
-        .into_png()
-        .map_err(|e| TummlerError::OfficeError(format!("page {}: {e}", idx + 1)))?;
-    Ok((w, h, png))
 }
 
 /// 144 dpi (2× 72) → EMU.

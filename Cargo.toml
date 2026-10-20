@@ -37,8 +37,8 @@ tempfile = "3.10"
 ctrlc = "3.4"
 libc = "0.2"
 calamine = "0.26"
-office2pdf = { version = "0.9", default-features = true }
-hayro = { version = "0.8", default-features = true }
+office2pdf = { version = "0.9.1", default-features = true }
+hayro = { version = "0.8.0", default-features = true }
 
 [profile.release]
 opt-level = 3
@@ -48,5 +48,12 @@ codegen-units = 1
 panic = "abort"
 incremental = false
 
+# Typst + vello debuginfo OOMs GitHub-hosted runners (exit 101 in ~3 min).
 [profile.dev]
 opt-level = 0
+debug = 0
+incremental = false
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
