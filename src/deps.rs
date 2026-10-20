@@ -230,10 +230,8 @@ pub fn check_all() {
         "○ not found (optional, never auto-installed)".yellow()
     };
     println!(
-        "  {:12}  {}  — {}",
-        "soffice".bold(),
-        lo_status,
-        ".odp/.ppt if you already have LibreOffice"
+        "  {:12}  {lo_status}  — .odp/.ppt if you already have LibreOffice",
+        "soffice".bold()
     );
 
     println!();
