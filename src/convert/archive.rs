@@ -337,10 +337,13 @@ pub fn peek_zip_kind(path: &Path) -> &'static str {
         return ".odp";
     }
     for i in 0..zip.len() {
-        let Ok(name) = zip.by_index(i).map(|e| e.name().replace('\\', "/")) else {
+        let Ok(e) = zip.by_index(i) else {
             continue;
         };
-        let n = name.to_ascii_lowercase();
+        let Ok(name) = e.name() else {
+            continue;
+        };
+        let n = name.replace('\\', "/").to_ascii_lowercase();
         if n.starts_with("word/") {
             return ".docx";
         }
