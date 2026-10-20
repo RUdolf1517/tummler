@@ -13,6 +13,7 @@ Examples:
   tummler -- -file.png jpeg
   tummler ./photos webp -r --include '*.png' --skip-newer
   tummler photo.heic jpg --max 1920
+  tummler -i
 
 Exit codes:
   0  success
@@ -108,6 +109,10 @@ pub struct Cli {
     /// Same as --color never
     #[arg(long = "no-color")]
     pub no_color: bool,
+
+    /// About tummler
+    #[arg(short = 'i', long = "info")]
+    pub info: bool,
 
     /// List supported formats
     #[arg(long = "list-formats")]

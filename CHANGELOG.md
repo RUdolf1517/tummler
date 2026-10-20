@@ -2,6 +2,7 @@
 
 ## 0.1.0 — 2026-10-20
 
+- `-i` / `--info`: about, author, GitHub, mail
 - Batch summary: `12 files, 48 MB → 11 MB (-77%)`
 - `--include` / `--exclude` globs; `--skip-newer` for folders
 - `--max PX` / `--resize 50%|800x|x600|800x600` for images and video

@@ -491,6 +491,39 @@ pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
     files
 }
 
+pub fn print_info() {
+    use colored::Colorize;
+    let version = env!("CARGO_PKG_VERSION");
+    println!(
+        "{} {} — {}",
+        "tummler".bold(),
+        format!("v{version}").dimmed(),
+        "a file acrobat".italic()
+    );
+    println!();
+    println!("One CLI that flips files into other formats — images, audio,");
+    println!("video, documents, archives. Native Rust where it can; ffmpeg");
+    println!("and pandoc where it must. You type the format last:");
+    println!();
+    println!("  {}", "tummler photo.png jpg".cyan());
+    println!("  {}", "tummler ./photos webp -r --skip-newer".cyan());
+    println!();
+    println!("{}", "This project was written by AI.".dimmed());
+    println!();
+    println!("  {:8}  {}", "author".dimmed(), "RUdolf1517");
+    println!(
+        "  {:8}  {}",
+        "github".dimmed(),
+        "https://github.com/RUdolf1517/tummler"
+    );
+    println!(
+        "  {:8}  {}",
+        "mail".dimmed(),
+        "rudolfzinovev@protonmail.com"
+    );
+    println!();
+}
+
 pub fn print_supported_formats() {
     use colored::Colorize;
     println!("{}", "Supported tummler formats:".bold());

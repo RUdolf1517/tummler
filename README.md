@@ -90,6 +90,7 @@ Options:
   -n, --dry-run             Print the plan, write nothing
       --color <WHEN>        auto | always | never
       --no-color            Same as --color never
+  -i, --info                About this project
       --list-formats        List formats
       --check-deps          Check ffmpeg/pandoc
       --no-auto-install     Do not install dependencies
@@ -265,10 +266,20 @@ Image and archive batches run in parallel (`-j`). ffmpeg/pandoc are checked once
 
 ```bash
 cargo run -- photo.png jpg --dry-run
+cargo run -- -i
 cargo run -- --list-formats
 cargo test
 cargo build --release
 ```
+
+## About
+
+`tummler -i`
+
+Written by AI. Directed by [RUdolf1517](https://github.com/RUdolf1517).
+
+- GitHub: [github.com/RUdolf1517/tummler](https://github.com/RUdolf1517/tummler)
+- Mail: [rudolfzinovev@protonmail.com](mailto:rudolfzinovev@protonmail.com)
 
 ## License
 

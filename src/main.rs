@@ -43,6 +43,11 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_OK;
     }
 
+    if cli.info {
+        util::print_info();
+        return ui::EXIT_OK;
+    }
+
     if cli.list_formats {
         util::print_supported_formats();
         return ui::EXIT_OK;
