@@ -200,8 +200,8 @@ pub fn check_all() {
     println!();
     println!(
         "  {} {}",
-        "Native (no dependencies):".bold(),
-        "images (image crate), archives (zip/tar)".dimmed()
+        "Native (no extra install):".bold(),
+        "images, archives, spreadsheets (xlsx→csv/txt), slides (pptx↔pdf)".dimmed()
     );
     println!();
 

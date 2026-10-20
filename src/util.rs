@@ -365,7 +365,8 @@ pub fn classify_ext(ext: &str) -> FormatKind {
         | "aiff" | "aif" | "alac" | "ac3" | "dts" | "amr" | "au" | "ra" => FormatKind::Media,
 
         "pdf" | "docx" | "odt" | "html" | "htm" | "md" | "markdown" | "tex"
-        | "rst" | "epub" | "pptx" | "ppt" | "csv" | "json" | "txt" | "rtf"
+        | "rst" | "epub" | "pptx" | "ppt" | "ppsx" | "pps" | "odp"
+        | "csv" | "json" | "txt" | "rtf"
         | "org" | "adoc" | "djvu" | "fb2" => FormatKind::Document,
 
         "xlsx" | "xlsm" | "xlsb" | "xls" | "ods" => FormatKind::Spreadsheet,
@@ -519,6 +520,7 @@ pub fn print_info() {
     println!();
     println!("  {}", "tummler photo.png jpg".cyan());
     println!("  {}", "tummler table.xlsx csv".cyan());
+    println!("  {}", "tummler slides.pptx pdf".cyan());
     println!("  {}", "tummler ./photos webp -r --skip-newer".cyan());
     println!();
     println!("{}", "This project was written by AI.".dimmed());
@@ -562,7 +564,18 @@ pub fn print_supported_formats() {
     println!("  {} {}", "📄  Documents".bold(), "(requires pandoc)".dimmed());
     println!(
         "     {}",
-        "pdf, docx, odt, html, md, tex, rst, epub, pptx, csv, json, txt, rtf".cyan()
+        "pdf, docx, odt, html, md, tex, rst, epub, csv, json, txt, rtf".cyan()
+    );
+    println!();
+
+    println!(
+        "  {} {}",
+        "🎞  Slides".bold(),
+        "(native, no LibreOffice)".dimmed()
+    );
+    println!(
+        "     {}",
+        "pptx → pdf,  pdf → pptx".cyan()
     );
     println!();
 
@@ -589,6 +602,8 @@ pub fn print_supported_formats() {
     println!("  {}  {}", "tummler video.mp4 webm -q 80".dimmed(), "→ video.webm".dimmed());
     println!("  {}  {}", "tummler doc.docx pdf".dimmed(), "→ doc.pdf".dimmed());
     println!("  {}  {}", "tummler table.xlsx csv".dimmed(), "→ table.csv".dimmed());
+    println!("  {}  {}", "tummler slides.pptx pdf".dimmed(), "→ slides.pdf".dimmed());
+    println!("  {}  {}", "tummler slides.pdf pptx".dimmed(), "→ slides.pptx".dimmed());
     println!("  {}  {}", "tummler archive.zip tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
     println!(
         "  {}  {}",
@@ -626,6 +641,8 @@ mod tests {
         assert_eq!(classify_ext("jpeg"), FormatKind::Image);
         assert_eq!(classify_ext("mp4"), FormatKind::Media);
         assert_eq!(classify_ext("pdf"), FormatKind::Document);
+        assert_eq!(classify_ext("pptx"), FormatKind::Document);
+        assert_eq!(classify_ext("odp"), FormatKind::Document);
         assert_eq!(classify_ext("xlsx"), FormatKind::Spreadsheet);
         assert_eq!(classify_ext("xls"), FormatKind::Spreadsheet);
         assert_eq!(classify_ext("ods"), FormatKind::Spreadsheet);

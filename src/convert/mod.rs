@@ -2,6 +2,7 @@ pub mod archive;
 pub mod document;
 pub mod image;
 pub mod media;
+pub mod office;
 pub mod spreadsheet;
 
 use crate::deps;
@@ -35,10 +36,11 @@ pub fn prefetch_deps(
     let mut need_ffmpeg = target_kind == FormatKind::Media || is_heif(target_ext);
     let need_pandoc = target_kind == FormatKind::Document
         && inputs.iter().any(|p| {
+            let ext = get_extension(p).unwrap_or_default();
             matches!(
-                classify_ext(&get_extension(p).unwrap_or_default()),
+                classify_ext(&ext),
                 FormatKind::Document | FormatKind::Unknown
-            )
+            ) && !office::is_office_pair(&ext, target_ext)
         });
 
     if target_kind == FormatKind::Image {
@@ -135,6 +137,14 @@ pub fn convert_file(
                 target_ext.clone(),
             ))
         }
+    } else if office::is_office_pair(&source_ext, &target_ext) {
+        office::convert_office(
+            input,
+            &staging,
+            &target_ext,
+            opts.no_auto_install,
+            opts.assume_yes,
+        )
     } else {
         match target_kind {
             FormatKind::Image => {

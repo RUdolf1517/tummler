@@ -16,6 +16,8 @@ Examples:
   tummler table.xlsx csv
   tummler table.xlsx txt --sheet Sales
   tummler table.xlsx csv --all-sheets
+  tummler slides.pptx pdf
+  tummler slides.pdf pptx
   tummler -i
 
 Exit codes:

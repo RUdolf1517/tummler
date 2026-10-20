@@ -10,7 +10,7 @@ homepage = "https://github.com/RUdolf1517/tummler"
 readme = "README.md"
 keywords = ["cli", "converter", "ffmpeg", "image", "transcode"]
 categories = ["command-line-utilities", "multimedia"]
-rust-version = "1.74"
+rust-version = "1.92"
 
 [[bin]]
 name = "tummler"
@@ -37,6 +37,8 @@ tempfile = "3.10"
 ctrlc = "3.4"
 libc = "0.2"
 calamine = "0.26"
+office2pdf = "0.9"
+hayro = "0.8"
 
 [profile.release]
 opt-level = 3

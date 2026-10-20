@@ -11,7 +11,7 @@ Images · audio · video · documents · spreadsheets · archives.
 
 [![license](https://img.shields.io/badge/license-MIT-0b3d91?style=flat-square)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-111111?style=flat-square)](#install)
-[![rust](https://img.shields.io/badge/rust-1.74%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
+[![rust](https://img.shields.io/badge/rust-1.92%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
 
 </div>
 
@@ -24,6 +24,7 @@ tummler ./photos webp -r --skip-newer -o ./out
 tummler video.mp4 gif
 tummler report.docx pdf
 tummler table.xlsx csv
+tummler slides.pptx pdf
 tummler backup.zip tar.gz
 ```
 
@@ -50,14 +51,14 @@ brew install tummler
 
 Intel Mac: `brew install --HEAD tummler` (builds with Rust).
 
-**Cargo** (needs [Rust 1.74+](https://rustup.rs))
+**Cargo** (needs [Rust 1.92+](https://rustup.rs))
 
 ```bash
 # from git:
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
-macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY.
+macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY. PowerPoint ↔ PDF is native (no LibreOffice).
 
 <details>
 <summary>From source</summary>
@@ -121,6 +122,15 @@ tummler table.xlsx csv --all-sheets -o ./out
 tummler a.xlsx b.xls csv -o ./out/
 ```
 
+### Slides
+
+PowerPoint ↔ PDF in-process (office2pdf + hayro). No LibreOffice, no extra install.
+
+```bash
+tummler slides.pptx pdf
+tummler slides.pdf pptx
+```
+
 ### Overwrite
 
 ```bash
@@ -177,8 +187,9 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 |---|---|---|
 | **Images** | png jpg gif bmp ico tiff webp avif heic pnm tga dds hdr qoi exr | Rust · HEIC via ffmpeg |
 | **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a opus … | ffmpeg |
-| **Documents** | pdf docx odt html md tex rst epub pptx csv json txt rtf | pandoc · LaTeX for PDF |
+| **Documents** | pdf docx odt html md tex rst epub csv json txt rtf | pandoc · LaTeX for PDF |
 | **Spreadsheets** | xlsx xlsm xlsb xls ods → csv txt | Rust (calamine) |
+| **Slides** | pptx → pdf, pdf → pptx | Rust (office2pdf, hayro) |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
 
 ```bash
@@ -201,6 +212,7 @@ tummler ─┬─ images       →  image crate
          ├─ archives     →  zip / tar / gz / bz2 / xz / zstd
          ├─ audio/video  →  ffmpeg
          ├─ spreadsheets →  calamine (xlsx/xls/ods → csv/txt)
+         ├─ slides       →  office2pdf / hayro (pptx ↔ pdf)
          └─ documents    →  pandoc
 ```
 
