@@ -2,7 +2,7 @@
 name = "tummler"
 version = "0.1.0"
 edition = "2021"
-description = "Universal file converter — images, audio/video, documents, archives"
+description = "One CLI that mixes any file into any format — images, video, documents, archives"
 authors = ["RUdolf1517 <rudolfzinovev@protonmail.com>"]
 license = "MIT"
 repository = "https://github.com/RUdolf1517/tummler"
