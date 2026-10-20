@@ -48,8 +48,14 @@ fn run(cli: cli::Cli) -> i32 {
         return ui::EXIT_OK;
     }
 
+    if cli.format.is_none() {
+        if let Some(fmt) = util::take_positional_format(&mut cli.inputs) {
+            cli.format = Some(fmt);
+        }
+    }
+
     if cli.inputs.is_empty() {
-        ui::error("укажите входной файл: tummler input.png -f jpeg");
+        ui::error("укажите входной файл: tummler input.png jpg");
         ui::info("tummler --help — справка");
         return ui::EXIT_USAGE;
     }

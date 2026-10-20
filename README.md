@@ -3,13 +3,13 @@
 Универсальный конвертер файлов — один CLI для всего. Картинки, аудио/видео, документы и архивы.
 
 ```bash
-tummler photo.png -f jpeg            # photo.png → photo.jpeg
-tummler photo.png -f webp -q 80      # с качеством
-tummler video.mp4 -f gif             # через ffmpeg
-tummler doc.docx -f pdf              # через pandoc
-tummler archive.zip -f tar.gz        # перепаковка
-tummler ./photos -f webp -r -o ./out # батч + рекурсия
-tummler a.png b.jpg -f avif -o ./out # несколько файлов
+tummler photo.png jpg                # photo.png → photo.jpg
+tummler photo.png jpeg -q 80         # → photo.jpeg, с качеством
+tummler video.mp4 gif                # через ffmpeg
+tummler doc.docx pdf                 # через pandoc
+tummler archive.zip tar.gz           # перепаковка
+tummler ./photos webp -r -o ./out    # батч + рекурсия
+tummler a.png b.jpg avif -o ./out    # несколько файлов
 ```
 
 Поддерживает **macOS** и **Linux** (x86_64 и ARM).
@@ -60,13 +60,14 @@ cargo build --release
 ## Использование
 
 ```
-tummler [OPTIONS] [INPUT]...
+tummler [OPTIONS] <INPUT>... [FORMAT]
 
 Аргументы:
-  [INPUT]...                Файлы или директории. «-» = stdin
+  <INPUT>...                Файлы или директории. «-» = stdin
+  [FORMAT]                  Целевой формат последним: jpg, webp, mp4, pdf, tar.gz…
 
 Опции:
-  -f, --format <EXT>        Целевой формат
+  -f, --format <EXT>        Формат явно (вместо позиционного)
   -o, --output <PATH>       Выходной файл или директория. «-» = stdout
   -q, --quality <1-100>     Качество lossy-форматов
       --overwrite, --force  Перезаписать существующие файлы
@@ -87,32 +88,33 @@ tummler [OPTIONS] [INPUT]...
   -V, --version             Версия
 ```
 
-Формат можно не указывать, если он есть в `-o`: `tummler in.png -o out.webp`.
-
-`-f jpeg` пишет `.jpeg`, `-f jpg` пишет `.jpg`.
+Основной синтаксис — формат последним аргументом:
 
 ```bash
-tummler image.png --format jpeg
-tummler image.png -f webp
+tummler image.png jpg                    # → image.jpg
+tummler image.png jpeg                   # → image.jpeg
+tummler image.png webp -o out/
 tummler image.png -o image.webp          # формат из расширения -o
-tummler -- -file.png -f jpeg             # файл, имя которого начинается с -
-cat in.png | tummler - -f jpeg > out.jpeg
+tummler -- -file.png jpeg                # файл, имя которого начинается с -
+cat in.png | tummler - jpeg > out.jpeg
 ```
+
+`-f` / `--format` тоже работают: `tummler image.png -f webp`.
 
 ### Батч-конвертация
 
 ```bash
 # Несколько файлов в директорию (параллельно)
-tummler a.png b.jpg c.bmp -f webp -o ./converted/
+tummler a.png b.jpg c.bmp webp -o ./converted/
 
 # Вся директория
-tummler ./photos -f avif --overwrite
+tummler ./photos avif --overwrite
 
 # Рекурсивно, 8 потоков
-tummler ./photos -f webp -r -o ./out -j 8
+tummler ./photos webp -r -o ./out -j 8
 
 # Dry-run — план на stdout (можно пайпить)
-tummler ./photos -f jpeg -r -n
+tummler ./photos jpeg -r -n
 ```
 
 В TTY tummler показывает спиннер на одном файле и прогресс-бар на батче. В пайпах и с `--quiet` анимация выключена.
@@ -120,17 +122,17 @@ tummler ./photos -f jpeg -r -n
 ### Качество
 
 ```bash
-tummler photo.png -f jpeg -q 90    # высокое качество jpeg (дефолт 90)
-tummler photo.png -f webp -q 80
-tummler video.mp4 -f webm -q 70    # видео (crf)
-tummler video.mp4 -f mp3 -q 85     # аудио (битрейт 256k)
+tummler photo.png jpeg -q 90    # высокое качество jpeg (дефолт 90)
+tummler photo.png webp -q 80
+tummler video.mp4 webm -q 70    # видео (crf)
+tummler video.mp4 mp3 -q 85     # аудио (битрейт 256k)
 ```
 
 ### Перезапись
 
 ```bash
-tummler img.png -f jpeg              # ошибка если img.jpeg уже есть
-tummler img.png -f jpeg --overwrite  # перезаписать
+tummler img.png jpeg              # ошибка если img.jpeg уже есть
+tummler img.png jpeg --overwrite  # перезаписать
 ```
 
 ## Поддерживаемые форматы
@@ -161,7 +163,7 @@ tummler --list-formats
 Если зависимость не найдена, tummler предложит установить её автоматически в TTY. В скриптах: `--yes` чтобы поставить, `--no-auto-install` чтобы никогда не ставить.
 
 ```bash
-tummler video.mp4 -f gif --no-auto-install
+tummler video.mp4 gif --no-auto-install
 tummler --check-deps
 ```
 
@@ -174,8 +176,8 @@ tummler --check-deps
 | stdout = данные, stderr = сообщения | прогресс и спиннер на stderr, только в TTY |
 | Коды выхода | `0` успех, `1` ошибка конвертации, `2` неверные аргументы |
 | Цвет | `NO_COLOR`, `FORCE_COLOR`, `TERM=dumb`, `--color`, `--no-color` |
-| `--` конец опций | `tummler -- -file.png -f jpeg` |
-| stdin/stdout | `tummler - -f jpeg` читает stdin, без `-o` пишет stdout |
+| `--` конец опций | `tummler -- -file.png jpeg` |
+| stdin/stdout | `tummler - jpeg` читает stdin, без `-o` пишет stdout |
 | Короткие флаги | склеиваются: `-rvn` |
 | `--quiet` | только ошибки; `-q` занят качеством |
 
@@ -199,27 +201,27 @@ tummler --completions fish > ~/.config/fish/completions/tummler.fish
 
 ```bash
 # Картинки
-tummler screenshot.png -f jpeg -q 85 -o compressed.jpg
-tummler logo.png -f ico
-tummler ./wallpapers -f avif -r -o ./avif -j 8
+tummler screenshot.png jpeg -q 85 -o compressed.jpg
+tummler logo.png ico
+tummler ./wallpapers avif -r -o ./avif -j 8
 
 # Видео/аудио
-tummler input.mp4 -f webm
-tummler input.avi -f mp4 --ffmpeg-args "-crf 23 -preset fast"
-tummler podcast.wav -f mp3 -q 90
-tummler video.mp4 -f gif
+tummler input.mp4 webm
+tummler input.avi mp4 --ffmpeg-args "-crf 23 -preset fast"
+tummler podcast.wav mp3 -q 90
+tummler video.mp4 gif
 
 # Документы
-tummler report.docx -f pdf
-tummler README.md -f html -o site.html
+tummler report.docx pdf
+tummler README.md html -o site.html
 
 # Архивы
-tummler backup.zip -f tar.gz
-tummler huge.log -f gz
+tummler backup.zip tar.gz
+tummler huge.log gz
 
 # Батч
-tummler . -f webp -r --overwrite -q 80
-tummler a.png b.jpg c.tiff -f png -o ./pngs --overwrite
+tummler . webp -r --overwrite -q 80
+tummler a.png b.jpg c.tiff png -o ./pngs --overwrite
 ```
 
 ## Как это работает
@@ -236,7 +238,7 @@ tummler ─┬─ Картинки  →  image crate (нативно)
 ## Разработка
 
 ```bash
-cargo run -- photo.png -f jpeg --dry-run
+cargo run -- photo.png jpg --dry-run
 cargo run -- --list-formats
 cargo test
 cargo build --release

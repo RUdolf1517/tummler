@@ -37,6 +37,35 @@ pub fn is_stdio(path: &Path) -> bool {
     path.as_os_str() == "-"
 }
 
+/// Если последний позиционный аргумент — имя формата (`jpg`, `webp`, `tar.gz`),
+/// забираем его из списка входов.
+///
+/// `tummler img.png jpg` → входы `[img.png]`, формат `jpg`.
+/// `photo.jpg` не считается форматом (это имя файла).
+pub fn take_positional_format(inputs: &mut Vec<PathBuf>) -> Option<String> {
+    let last = inputs.last()?;
+    if is_stdio(last) {
+        return None;
+    }
+    let raw = last.to_str()?;
+    if raw.contains('/') || raw.contains('\\') {
+        return None;
+    }
+    let token = raw.trim().trim_start_matches('.').to_lowercase();
+    if token.is_empty() {
+        return None;
+    }
+    if token.contains('.') && !matches!(token.as_str(), "tar.gz" | "tar.bz2" | "tar.xz" | "tar.zst")
+    {
+        return None;
+    }
+    if !is_supported_output(&token) {
+        return None;
+    }
+    inputs.pop();
+    Some(token)
+}
+
 /// Расширение как в имени файла (`photo.jpeg` → `jpeg`), для вывода `-o`.
 pub fn requested_ext_from_path(path: &Path) -> Option<String> {
     if is_stdio(path) {
@@ -265,13 +294,13 @@ pub fn print_supported_formats() {
     println!();
 
     println!("{}", "Примеры:".dimmed());
-    println!("  {}  {}", "tummler photo.png -f jpeg".dimmed(), "→ photo.jpeg".dimmed());
-    println!("  {}  {}", "tummler video.mp4 -f webm -q 80".dimmed(), "→ video.webm".dimmed());
-    println!("  {}  {}", "tummler doc.docx -f pdf".dimmed(), "→ doc.pdf".dimmed());
-    println!("  {}  {}", "tummler archive.zip -f tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
+    println!("  {}  {}", "tummler photo.png jpeg".dimmed(), "→ photo.jpeg".dimmed());
+    println!("  {}  {}", "tummler video.mp4 webm -q 80".dimmed(), "→ video.webm".dimmed());
+    println!("  {}  {}", "tummler doc.docx pdf".dimmed(), "→ doc.pdf".dimmed());
+    println!("  {}  {}", "tummler archive.zip tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
     println!(
         "  {}  {}",
-        "tummler ./photos -f webp -r -o ./out".dimmed(),
+        "tummler ./photos webp -r -o ./out".dimmed(),
         "→ батч + рекурсия".dimmed()
     );
 }
@@ -383,5 +412,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out, Path::new("-"));
+    }
+
+    #[test]
+    fn test_take_positional_format() {
+        let mut inputs = vec![PathBuf::from("img.png"), PathBuf::from("jpg")];
+        assert_eq!(take_positional_format(&mut inputs).as_deref(), Some("jpg"));
+        assert_eq!(inputs, vec![PathBuf::from("img.png")]);
+
+        let mut inputs = vec![PathBuf::from("a.png"), PathBuf::from("b.png"), PathBuf::from("webp")];
+        assert_eq!(take_positional_format(&mut inputs).as_deref(), Some("webp"));
+        assert_eq!(inputs.len(), 2);
+
+        let mut inputs = vec![PathBuf::from("archive.zip"), PathBuf::from("tar.gz")];
+        assert_eq!(take_positional_format(&mut inputs).as_deref(), Some("tar.gz"));
+
+        let mut inputs = vec![PathBuf::from("photo.jpg")];
+        assert_eq!(take_positional_format(&mut inputs), None);
+        assert_eq!(inputs, vec![PathBuf::from("photo.jpg")]);
+
+        let mut inputs = vec![PathBuf::from("-")];
+        assert_eq!(take_positional_format(&mut inputs), None);
     }
 }

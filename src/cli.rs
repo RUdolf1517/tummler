@@ -6,28 +6,28 @@ use crate::ui::ColorWhen;
 
 const AFTER_HELP: &str = "\
 Примеры:
-  tummler photo.png -f jpeg
+  tummler photo.png jpg
+  tummler photo.png jpeg -q 80
   tummler photo.png -o photo.webp
-  tummler photo.png --format webp -q 80
-  cat in.png | tummler - -f jpeg > out.jpeg
-  tummler -- -file.png -f jpeg
+  cat in.png | tummler - jpeg > out.jpeg
+  tummler -- -file.png jpeg
 
 Коды выхода:
   0  успех
   1  ошибка конвертации
   2  неверные аргументы
 
-Короткие флаги склеиваются: -rvn.
+Последний аргумент — формат, если это известное расширение.
 `--` отделяет файлы, чьи имена начинаются с `-`.
 ";
 
 /// tummler — универсальный конвертер файлов
 ///
 /// Примеры:
-///   tummler photo.png -f jpeg
-///   tummler photo.png --format webp -q 80
+///   tummler photo.png jpg
+///   tummler photo.png webp -q 80
 ///   tummler photo.png -o photo.webp
-///   cat in.png | tummler - -f jpeg > out.jpeg
+///   cat in.png | tummler - jpeg > out.jpeg
 #[derive(Parser, Debug)]
 #[command(
     name = "tummler",
@@ -38,8 +38,8 @@ const AFTER_HELP: &str = "\
     next_line_help = false
 )]
 pub struct Cli {
-    /// Входные файлы или директории. «-» = stdin
-    #[arg(value_name = "INPUT")]
+    /// Входные файлы или директории, последним — формат: tummler img.png jpg
+    #[arg(value_name = "INPUT|FORMAT")]
     pub inputs: Vec<PathBuf>,
 
     /// Целевой формат (jpeg, webp, mp4, pdf, …)

@@ -2,7 +2,7 @@
 
 ## 0.1.0 — 2026-10-20
 
-- Убран сахар `-jpeg`; формат только через `-f/--format` или `-o file.ext`
+- Формат позиционный: `tummler img.png jpg` (или `-f jpeg` / `-o out.webp`)
 - Спиннер на одном файле, прогресс-бар на батче (TTY, не в `--quiet`)
 - Параллельный батч: `-j/--jobs` (по умолчанию число CPU), prefetch ffmpeg/pandoc
 - Буферы 256 KiB на JPEG, walkdir + BufReader на архивах, `panic = abort` в release
