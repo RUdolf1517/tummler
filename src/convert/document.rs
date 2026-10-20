@@ -8,8 +8,9 @@ pub fn convert_document(
     input: &Path,
     output: &Path,
     no_auto_install: bool,
+    assume_yes: bool,
 ) -> Result<(), TummlerError> {
-    deps::ensure_available("pandoc", no_auto_install)
+    deps::ensure_available("pandoc", no_auto_install, assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("pandoc".into(), e))?;
 
     let mut cmd = Command::new("pandoc");

@@ -11,8 +11,9 @@ pub fn convert_media(
     quality: Option<u8>,
     ffmpeg_args: Option<&str>,
     no_auto_install: bool,
+    assume_yes: bool,
 ) -> Result<(), TummlerError> {
-    deps::ensure_available("ffmpeg", no_auto_install)
+    deps::ensure_available("ffmpeg", no_auto_install, assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("ffmpeg".into(), e))?;
 
     let mut cmd = Command::new("ffmpeg");

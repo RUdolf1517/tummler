@@ -22,7 +22,7 @@ tummler a.png b.jpg -avif -o ./out    # несколько файлов
 cargo install tummler
 ```
 
-Требуется Rust 1.70+.
+Требуется Rust 1.74+.
 
 ### Готовые бинарники
 
@@ -60,27 +60,33 @@ cargo build --release
 ## Использование
 
 ```
-tummler <INPUT>... -<EXT> [ОПЦИИ]
+tummler [OPTIONS] [INPUT]...
 
 Аргументы:
-  <INPUT>...        Входные файлы или директории (один или несколько)
+  [INPUT]...                Файлы или директории. «-» = stdin
 
 Опции:
-  -f, --format <EXT>        Целевой формат (альтернатива `-jpeg` синтаксису)
-  -o, --output <PATH>       Выходной файл или директория
-  -q, --quality <1-100>     Качество для lossy-форматов (jpeg, webp, видео)
-      --overwrite           Перезаписывать существующие файлы
+  -f, --format <EXT>        Целевой формат (или сахар `-jpeg`)
+  -o, --output <PATH>       Выходной файл или директория. «-» = stdout
+  -q, --quality <1-100>     Качество lossy-форматов
+      --overwrite, --force  Перезаписать существующие файлы
   -r, --recursive           Рекурсивный обход директорий
-  -v, --verbose             Подробный вывод
-      --dry-run             Показать что будет сделано без конвертации
-      --list-formats        Список всех поддерживаемых форматов
-      --check-deps          Проверить внешние зависимости
-      --no-auto-install     Не предлагать автоустановку, только подсказка
-      --ffmpeg-args <ARGS>  Доп. аргументы для ffmpeg: "-crf 23 -preset fast"
-      --completions <SHELL> Скрипт автодополнения: bash, zsh, fish, powershell, elvish
+  -v, --verbose             Подробный лог на stderr
+      --quiet               Только ошибки (для скриптов)
+  -n, --dry-run             Показать план, ничего не писать
+      --color <WHEN>        auto | always | never
+      --no-color            То же, что --color never
+      --list-formats        Список форматов
+      --check-deps          Проверить ffmpeg/pandoc
+      --no-auto-install     Не ставить зависимости
+  -y, --yes                 Ставить зависимости без вопроса
+      --ffmpeg-args <ARGS>  Доп. аргументы ffmpeg
+      --completions <SHELL> bash | zsh | fish | powershell | elvish
   -h, --help                Справка
   -V, --version             Версия
 ```
+
+Формат можно не указывать, если он есть в `-o`: `tummler in.png -o out.webp`.
 
 ### Синтаксис `-расширение`
 
@@ -93,12 +99,16 @@ tummler video.mp4 -mp3            # извлечь аудио
 tummler archive.zip -tar.gz       # перепаковка
 ```
 
-Работает с любым расширением: `-jpeg`, `-webp`, `-pdf`, `-tar.gz` и т.д.
-`-jpeg` пишет `.jpeg`, `-jpg` пишет `.jpg`. Можно и классически:
+Сахар `-jpeg` срабатывает **только для известных форматов**, чтобы не ломать POSIX: `-rvn` это `-r -v -n`, а не формат `rvn`.
+
+`-jpeg` пишет `.jpeg`, `-jpg` пишет `.jpg`. Классически:
 
 ```bash
 tummler image.png --format jpeg
 tummler image.png -f webp
+tummler image.png -o image.webp          # формат из расширения -o
+tummler -- -weird.png -jpeg              # файл, имя которого начинается с -
+cat in.png | tummler - -jpeg > out.jpeg  # unix-фильтр
 ```
 
 ### Батч-конвертация
@@ -113,8 +123,8 @@ tummler ./photos -avif --overwrite
 # Рекурсивно со вложенными папками
 tummler ./photos -webp -r -o ./out
 
-# Dry-run — посмотреть что будет
-tummler ./photos -jpeg -r --dry-run
+# Dry-run — план на stdout (можно пайпить)
+tummler ./photos -jpeg -r -n
 
 # С прогресс-баром и итогами
 tummler ./huge-folder -webp -r
@@ -183,7 +193,24 @@ tummler video.mp4 -gif --no-auto-install
 tummler --check-deps   # только проверить
 ```
 
-Автоустановка спрашивает подтверждение только в интерактивном терминале (TTY). В скриптах и CI tummler не будет запускать `sudo apt` сам.
+Автоустановка спрашивает подтверждение только в интерактивном терминале (TTY). В скриптах: `--yes` чтобы поставить, `--no-auto-install` чтобы никогда не ставить.
+
+## Соглашения CLI
+
+Ориентир — [POSIX](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap12.html), GNU и [clig.dev](https://clig.dev/):
+
+| Правило | Как у tummler |
+|---------|----------------|
+| Успех молча, как `cp`/`mv` | Чекмарки только с `-v`; прогресс — на stderr и только в TTY |
+| stdout = данные, stderr = сообщения | `✓` больше не попадает в пайп; dry-run пишет `src -> dst` на stdout |
+| Коды выхода | `0` успех, `1` ошибка конвертации, `2` неверные аргументы |
+| Цвет | `NO_COLOR`, `FORCE_COLOR`, `TERM=dumb`, `--color`, `--no-color` |
+| `--` конец опций | `tummler -- -file.png -jpeg` |
+| stdin/stdout | `tummler - -jpeg` читает stdin, без `-o` пишет stdout |
+| Короткие флаги | склеиваются: `-rvn` |
+| `--quiet` | только ошибки; `-q` занят качеством (как у cwebp/convert) |
+
+Ошибки в GNU-стиле: `tummler: файл не найден: foo.png`.
 
 ## Автодополнение
 

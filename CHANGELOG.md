@@ -2,6 +2,12 @@
 
 ## 0.1.0 — 2026-10-20
 
+- CLI по POSIX/GNU/clig.dev: коды 0/1/2, stdout vs stderr, NO_COLOR, `--quiet`, `-n/--dry-run`, `--force`, `--`
+- `-jpeg` только для известных форматов — `-rvn` больше не съедается как формат
+- Формат из `-o`: `tummler in.png -o out.webp`
+- Unix-фильтр: `cat in.png | tummler - -jpeg > out.jpeg`
+- Успех молча (как `cp`); прогресс только на stderr в TTY
+
 - Первый релиз
 - Картинки (image crate): png, jpg, gif, bmp, ico, tiff, webp, avif, pnm, tga, dds, hdr, farbfeld, qoi, exr
 - Аудио/видео (ffmpeg): mp4, avi, mkv, mov, webm, mp3, wav, flac, aac, ogg, m4a, opus и др.

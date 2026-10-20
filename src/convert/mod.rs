@@ -19,6 +19,7 @@ pub fn convert_file(
     overwrite: bool,
     ffmpeg_args: Option<&str>,
     no_auto_install: bool,
+    assume_yes: bool,
     verbose: bool,
 ) -> Result<(), TummlerError> {
     let target_ext = normalize_ext(target_ext);
@@ -46,7 +47,7 @@ pub fn convert_file(
 
     if output.exists() && !overwrite {
         return Err(TummlerError::Other(format!(
-            "Файл уже существует: {} (используйте --overwrite)",
+            "Файл уже существует: {} (используйте --overwrite / --force)",
             output.display()
         )));
     }
@@ -65,7 +66,14 @@ pub fn convert_file(
     let result = match target_kind {
         FormatKind::Image => match source_kind {
             FormatKind::Media | FormatKind::Document => {
-                media::convert_media(input, &staging, quality, ffmpeg_args, no_auto_install)
+                media::convert_media(
+                    input,
+                    &staging,
+                    quality,
+                    ffmpeg_args,
+                    no_auto_install,
+                    assume_yes,
+                )
             }
             FormatKind::Archive => Err(TummlerError::UnsupportedConversion(
                 source_ext,
@@ -73,10 +81,17 @@ pub fn convert_file(
             )),
             _ => image::convert_image(input, &staging, quality),
         },
-        FormatKind::Media => {
-            media::convert_media(input, &staging, quality, ffmpeg_args, no_auto_install)
+        FormatKind::Media => media::convert_media(
+            input,
+            &staging,
+            quality,
+            ffmpeg_args,
+            no_auto_install,
+            assume_yes,
+        ),
+        FormatKind::Document => {
+            document::convert_document(input, &staging, no_auto_install, assume_yes)
         }
-        FormatKind::Document => document::convert_document(input, &staging, no_auto_install),
         FormatKind::Archive => archive::convert_archive(input, &staging),
         FormatKind::Unknown => Err(TummlerError::UnsupportedFormat(target_ext.clone())),
     };

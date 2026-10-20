@@ -63,8 +63,20 @@ pub fn prompt_auto_install(bin: &str, no_auto: bool) -> bool {
         return false;
     }
 
+    run_install(bin, &cmd)
+}
+
+fn try_install(bin: &str) -> bool {
+    let Some(cmd) = detect_install_command(bin) else {
+        eprintln!("{} нет пакетного менеджера для автоустановки {bin}", "tummler:".yellow());
+        return false;
+    };
+    run_install(bin, &cmd)
+}
+
+fn run_install(bin: &str, cmd: &str) -> bool {
     eprintln!("{} Запускаю: {}", "→".cyan(), cmd.dimmed());
-    match Command::new("sh").arg("-c").arg(&cmd).status() {
+    match Command::new("sh").arg("-c").arg(cmd).status() {
         Ok(s) if s.success() => {
             if is_available(bin) {
                 eprintln!("{} {} успешно установлен!", "✓".green(), bin.green());
@@ -135,11 +147,22 @@ fn bin_for_pkg(bin: &str) -> &str {
 }
 
 /// Проверка и автоустановка если нужно
-pub fn ensure_available(bin: &str, no_auto: bool) -> Result<(), String> {
+pub fn ensure_available(bin: &str, no_auto: bool, assume_yes: bool) -> Result<(), String> {
     if is_available(bin) {
         return Ok(());
     }
-    if prompt_auto_install(bin, no_auto) && is_available(bin) {
+    if no_auto {
+        eprintln!("{} {} не найден в PATH.", "⚠".yellow(), bin.bold());
+        eprintln!("{}", install_hint(bin));
+        return Err(format!("{} не найден. {}", bin, install_hint(bin)));
+    }
+    if assume_yes {
+        if try_install(bin) && is_available(bin) {
+            return Ok(());
+        }
+        return Err(format!("{} не найден. {}", bin, install_hint(bin)));
+    }
+    if prompt_auto_install(bin, false) && is_available(bin) {
         return Ok(());
     }
     Err(format!("{} не найден. {}", bin, install_hint(bin)))

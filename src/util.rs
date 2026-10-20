@@ -32,6 +32,27 @@ pub fn output_extension(ext: &str) -> String {
     }
 }
 
+/// Unix-фильтр: путь «-» означает stdin/stdout.
+pub fn is_stdio(path: &Path) -> bool {
+    path.as_os_str() == "-"
+}
+
+/// Расширение как в имени файла (`photo.jpeg` → `jpeg`), для вывода `-o`.
+pub fn requested_ext_from_path(path: &Path) -> Option<String> {
+    if is_stdio(path) {
+        return None;
+    }
+    let file_name = path.file_name()?.to_string_lossy().to_lowercase();
+    for double in &["tar.gz", "tar.bz2", "tar.xz", "tar.zst"] {
+        if file_name.ends_with(&format!(".{double}")) {
+            return Some((*double).to_string());
+        }
+    }
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+}
+
 /// Получить расширение файла (нормализованное для классификации).
 pub fn get_extension(path: &Path) -> Option<String> {
     let file_name = path.file_name()?.to_string_lossy().to_lowercase();
@@ -111,6 +132,9 @@ pub fn resolve_output_path(
     let target_ext_with_dot = format!(".{target_ext}");
 
     if let Some(out) = output_arg {
+        if is_stdio(out) {
+            return Ok(PathBuf::from("-"));
+        }
         let is_dir_hint = out.to_string_lossy().ends_with('/')
             || out.to_string_lossy().ends_with('\\')
             || (out.exists() && out.is_dir())
@@ -176,7 +200,9 @@ fn strip_double_ext_stem(path: &Path) -> Option<String> {
 pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for input in inputs {
-        if input.is_file() {
+        if is_stdio(input) {
+            files.push(input.clone());
+        } else if input.is_file() {
             files.push(input.clone());
         } else if input.is_dir() {
             if recursive {
@@ -330,5 +356,32 @@ mod tests {
             Some("tar.gz")
         );
         assert_eq!(get_extension(Path::new("a.PNG")).as_deref(), Some("png"));
+    }
+
+    #[test]
+    fn test_stdio_and_requested_ext() {
+        assert!(is_stdio(Path::new("-")));
+        assert!(!is_stdio(Path::new("file.png")));
+        assert_eq!(
+            requested_ext_from_path(Path::new("/tmp/photo.jpeg")).as_deref(),
+            Some("jpeg")
+        );
+        assert_eq!(
+            requested_ext_from_path(Path::new("a.tar.gz")).as_deref(),
+            Some("tar.gz")
+        );
+        assert_eq!(requested_ext_from_path(Path::new("-")), None);
+    }
+
+    #[test]
+    fn test_resolve_stdio_output() {
+        let out = resolve_output_path(
+            Path::new("a.png"),
+            "jpeg",
+            Some(Path::new("-")),
+            false,
+        )
+        .unwrap();
+        assert_eq!(out, Path::new("-"));
     }
 }
