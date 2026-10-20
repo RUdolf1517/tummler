@@ -41,6 +41,7 @@ pub fn prefetch_deps(
     let lossy_webp = target == "webp" && quality.is_some();
     let mut need_ffmpeg =
         target_kind == FormatKind::Media || is_heif(target_ext) || lossy_webp;
+    let soffice_present = deps::soffice_bin().is_some();
     let need_pandoc = target_kind == FormatKind::Document
         && inputs.iter().any(|p| {
             let ext = get_extension(p).unwrap_or_default();
@@ -49,6 +50,7 @@ pub fn prefetch_deps(
                 FormatKind::Document | FormatKind::Unknown
             ) && !soffice::needs_soffice(&ext, target_ext)
                 && !soffice::is_ooxml_copy(&ext, target_ext)
+                && !(soffice_present && soffice::prefers_soffice(&ext, target_ext))
         });
     let need_soffice = inputs
         .iter()
@@ -148,6 +150,9 @@ pub fn convert_file(
     let result = if soffice::is_ooxml_copy(&source_ext, &target_ext) {
         soffice::copy_ooxml_deck(input, &staging)
     } else if soffice::needs_soffice(&source_ext, &target_ext) {
+        soffice::convert_office(input, &staging, &target_ext)
+    } else if soffice::prefers_soffice(&source_ext, &target_ext) && deps::soffice_bin().is_some()
+    {
         soffice::convert_office(input, &staging, &target_ext)
     } else if normalize_ext(&source_ext) == "pdf" && target_ext == "pptx" {
         Err(TummlerError::UnsupportedConversion(

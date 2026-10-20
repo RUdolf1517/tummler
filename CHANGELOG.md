@@ -4,7 +4,8 @@
 
 - Spreadsheets: `tummler table.xlsx csv` / `txt` (xlsx, xlsm, xlsb, xls, ods via calamine)
 - `--sheet NAME` (first sheet by default); `--all-sheets` / `--sheet '*'` → `table-Sheet1.csv`
-- Dropped office2pdf/Typst. Slides (`pptx`/`odp`/`ppt` → pdf and between decks) and Word/ODT (`doc`/`docx`/`odt`/`rtf` → pdf) use soffice only if already on PATH
+- Dropped office2pdf/Typst. Slides (`pptx`/`odp`/`ppt` → pdf and between decks) use soffice only if already on PATH
+- Word/ODT (`doc`/`docx`/`odt`/`rtf` → pdf) via pandoc; soffice is used only if already on PATH (never required)
 - `pptx` ↔ `ppsx` is a copy (no soffice). `pdf → pptx` is not supported. `odt`/`docx`/`md` → `pptx` still pandoc
 - Rust 1.99.1 / edition 2024
 - Video `-q` maps to CRF 18–38; x264 preset `medium`/`veryfast` (never `slow`); webm CRF uses `-b:v 0`

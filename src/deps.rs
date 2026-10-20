@@ -26,10 +26,10 @@ pub fn soffice_bin() -> Option<PathBuf> {
     None
 }
 
-/// Slide and Word/ODT → pdf need soffice on PATH. tummler will not install LibreOffice.
+/// Slide conversions need soffice on PATH. tummler will not install LibreOffice.
 pub fn require_soffice() -> Result<PathBuf, String> {
     soffice_bin().ok_or_else(|| {
-        "LibreOffice (soffice) not found in PATH. tummler does not install it; slides and Word/ODT → pdf need an existing install.".into()
+        "LibreOffice (soffice) not found in PATH. tummler does not install it; slide conversions (pptx/odp/ppt → pdf and between decks) need an existing install.".into()
     })
 }
 
@@ -230,7 +230,7 @@ pub fn check_all() {
         "○ not found (optional, never auto-installed)".yellow()
     };
     println!(
-        "  {:12}  {lo_status}  — slides and Word/ODT → pdf if you already have LibreOffice",
+        "  {:12}  {lo_status}  — slides; Word/ODT → pdf if present",
         "soffice".bold()
     );
 

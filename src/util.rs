@@ -564,7 +564,7 @@ pub fn print_supported_formats() {
     println!(
         "  {} {}",
         "📄  Documents".bold(),
-        "(pandoc; Word/ODT → pdf via soffice if already installed)".dimmed()
+        "(pandoc; Word/ODT → pdf uses soffice if already installed)".dimmed()
     );
     println!(
         "     {}",

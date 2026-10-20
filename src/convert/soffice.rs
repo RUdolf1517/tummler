@@ -35,8 +35,7 @@ pub fn copy_ooxml_deck(input: &Path, output: &Path) -> Result<(), TummlerError> 
     Ok(())
 }
 
-/// Already-installed soffice: Impress ↔ pdf / pptx / odp / ppt,
-/// and Writer (doc/docx/odt/rtf) → pdf.
+/// Already-installed soffice: Impress ↔ pdf / pptx / odp / ppt.
 /// Never auto-installed. `pptx` ↔ `ppsx` is a copy, not this.
 pub fn needs_soffice(src: &str, dst: &str) -> bool {
     let src = normalize_ext(src);
@@ -44,8 +43,14 @@ pub fn needs_soffice(src: &str, dst: &str) -> bool {
     if src == dst || is_ooxml_copy(&src, &dst) {
         return false;
     }
-    (is_impress(&src) && (is_impress(&dst) || dst == "pdf"))
-        || (is_writer(&src) && dst == "pdf")
+    is_impress(&src) && (is_impress(&dst) || dst == "pdf")
+}
+
+/// Writer → pdf: soffice if already on PATH (better layout), else pandoc.
+pub fn prefers_soffice(src: &str, dst: &str) -> bool {
+    let src = normalize_ext(src);
+    let dst = normalize_ext(dst);
+    is_writer(&src) && dst == "pdf"
 }
 
 pub fn convert_office(
@@ -163,16 +168,20 @@ mod tests {
         assert!(needs_soffice("odp", "pdf"));
         assert!(needs_soffice("pptx", "pdf"));
         assert!(needs_soffice("ppsx", "pdf"));
-        assert!(needs_soffice("docx", "pdf"));
-        assert!(needs_soffice("odt", "pdf"));
-        assert!(needs_soffice("doc", "pdf"));
-        assert!(needs_soffice("rtf", "pdf"));
+        assert!(!needs_soffice("docx", "pdf"));
+        assert!(!needs_soffice("odt", "pdf"));
         assert!(!needs_soffice("pptx", "ppsx"));
         assert!(!needs_soffice("odt", "pptx"));
         assert!(!needs_soffice("docx", "odt"));
         assert!(!needs_soffice("md", "pdf"));
         assert!(!needs_soffice("pdf", "pptx"));
         assert!(!needs_soffice("pptx", "pptx"));
+        assert!(prefers_soffice("docx", "pdf"));
+        assert!(prefers_soffice("odt", "pdf"));
+        assert!(prefers_soffice("doc", "pdf"));
+        assert!(prefers_soffice("rtf", "pdf"));
+        assert!(!prefers_soffice("odt", "pptx"));
+        assert!(!prefers_soffice("md", "pdf"));
     }
 
     #[test]
