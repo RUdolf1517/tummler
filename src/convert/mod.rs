@@ -162,9 +162,10 @@ pub fn convert_file(
     } else {
         match target_kind {
             FormatKind::Image => {
-                if is_heif(&source_ext) || is_heif(&target_ext) {
-                    via_ffmpeg()
-                } else if target_ext == "webp" && opts.quality.is_some() {
+                if is_heif(&source_ext)
+                    || is_heif(&target_ext)
+                    || (target_ext == "webp" && opts.quality.is_some())
+                {
                     via_ffmpeg()
                 } else {
                     match source_kind {
