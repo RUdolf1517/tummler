@@ -362,7 +362,7 @@ fn write_data_cell(
             Ok(())
         }
         Data::DateTime(dt) => {
-            ws.write_string(row, col, &dt.to_string())?;
+            ws.write_string(row, col, dt.to_string())?;
             Ok(())
         }
         Data::DateTimeIso(s) | Data::DurationIso(s) => {
@@ -370,7 +370,7 @@ fn write_data_cell(
             Ok(())
         }
         Data::Error(e) => {
-            ws.write_string(row, col, &e.to_string())?;
+            ws.write_string(row, col, e.to_string())?;
             Ok(())
         }
     }
