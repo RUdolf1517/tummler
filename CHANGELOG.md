@@ -4,13 +4,12 @@
 
 - Spreadsheets: `tummler table.xlsx csv` / `txt` (xlsx, xlsm, xlsb, xls, ods via calamine)
 - `--sheet NAME` (first sheet by default); `--all-sheets` / `--sheet '*'` → `table-Sheet1.csv`
-- Slides: `tummler slides.pptx pdf` (office2pdf); `pptx` ↔ `ppsx` is a copy
-- Dropped raster `pdf → pptx` (hayro). `odt`/`docx`/`md` → `pptx` still goes through pandoc
+- Dropped office2pdf/Typst. Slides (`pptx`/`odp`/`ppt` → pdf and between decks) use soffice only if already on PATH
+- `pptx` ↔ `ppsx` is a copy (no soffice). `pdf → pptx` is not supported. `odt`/`docx`/`md` → `pptx` still pandoc
 - Rust 1.99.1 / edition 2024
-- CI: tests/clippy without Typst (`--no-default-features`); `slides` is still the default build feature
 - Video `-q` maps to CRF 18–38; x264 preset `medium`/`veryfast` (never `slow`); webm CRF uses `-b:v 0`
 - Auto `-j` for media capped at 2; each ffmpeg gets `cpu/jobs` threads
-- `.odp`/`.ppt`/`.pps` via LibreOffice only if `soffice` is already on PATH (never auto-installed)
+- LibreOffice is never a crate dep and never auto-installed
 - `-q` on AVIF; lossy WebP via ffmpeg; JPEG skips an extra RGB copy; EXIF orientation applied
 - Pack file→zip/tar without a temp copy; spreadsheet writes CSV/TXT without a second buffer
 

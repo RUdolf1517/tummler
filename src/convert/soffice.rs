@@ -5,28 +5,41 @@ use crate::util::normalize_ext;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Impress formats that need LibreOffice (no native converter).
-pub fn is_lo_slide(ext: &str) -> bool {
-    matches!(normalize_ext(ext).as_str(), "odp" | "ppt" | "pps")
+fn is_lo_slide(ext: &str) -> bool {
+    matches!(ext, "odp" | "ppt" | "pps")
 }
 
 fn is_ooxml_slide(ext: &str) -> bool {
-    matches!(normalize_ext(ext).as_str(), "pptx" | "ppsx")
+    matches!(ext, "pptx" | "ppsx")
 }
 
 fn is_impress(ext: &str) -> bool {
     is_lo_slide(ext) || is_ooxml_slide(ext)
 }
 
-/// Use already-installed soffice: `.odp`/`.ppt`/`.pps` ↔ pptx/pdf/odp.
-/// Never `pptx/ppsx → pdf` (native) or `pptx ↔ ppsx` (copy).
+/// `pptx` ↔ `ppsx`: same OOXML package, no LibreOffice.
+pub fn is_ooxml_copy(src: &str, dst: &str) -> bool {
+    let src = normalize_ext(src);
+    let dst = normalize_ext(dst);
+    is_ooxml_slide(&src) && is_ooxml_slide(&dst) && src != dst
+}
+
+pub fn copy_ooxml_deck(input: &Path, output: &Path) -> Result<(), TummlerError> {
+    std::fs::copy(input, output).map_err(|e| {
+        TummlerError::IoError(format!("failed to write {}: {e}", output.display()))
+    })?;
+    Ok(())
+}
+
+/// Already-installed soffice: Impress ↔ pdf / pptx / odp / ppt.
+/// Never auto-installed. `pptx` ↔ `ppsx` is a copy, not this.
 pub fn needs_soffice(src: &str, dst: &str) -> bool {
     let src = normalize_ext(src);
     let dst = normalize_ext(dst);
-    if is_lo_slide(&src) {
-        return is_impress(&dst) || dst == "pdf";
+    if src == dst || is_ooxml_copy(&src, &dst) {
+        return false;
     }
-    is_ooxml_slide(&src) && is_lo_slide(&dst)
+    is_impress(&src) && (is_impress(&dst) || dst == "pdf")
 }
 
 pub fn convert_impress(
@@ -41,9 +54,8 @@ pub fn convert_impress(
             dst,
         ));
     };
-    let soffice = deps::require_soffice().map_err(|e| {
-        TummlerError::DependencyMissing("soffice".into(), e)
-    })?;
+    let soffice = deps::require_soffice()
+        .map_err(|e| TummlerError::DependencyMissing("soffice".into(), e))?;
 
     let tmp = tempfile::tempdir().map_err(|e| TummlerError::IoError(e.to_string()))?;
     let profile = tmp.path().join("lo-profile");
@@ -63,9 +75,8 @@ pub fn convert_impress(
     .arg(&outdir)
     .arg(input);
 
-    let result = interrupt::run(&mut cmd).map_err(|e| {
-        TummlerError::Other(format!("LibreOffice failed to start: {e}"))
-    })?;
+    let result = interrupt::run(&mut cmd)
+        .map_err(|e| TummlerError::Other(format!("LibreOffice failed to start: {e}")))?;
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);
@@ -95,9 +106,7 @@ fn lo_filter(ext: &str) -> Option<&'static str> {
 }
 
 fn file_url(path: &Path) -> String {
-    let abs = path
-        .canonicalize()
-        .unwrap_or_else(|_| path.to_path_buf());
+    let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let s = abs.to_string_lossy();
     let mut url = String::from("file://");
     for c in s.chars() {
@@ -146,11 +155,25 @@ mod tests {
         assert!(needs_soffice("pps", "pdf"));
         assert!(needs_soffice("pptx", "odp"));
         assert!(needs_soffice("odp", "pdf"));
-        assert!(!needs_soffice("pptx", "pdf"));
+        assert!(needs_soffice("pptx", "pdf"));
+        assert!(needs_soffice("ppsx", "pdf"));
         assert!(!needs_soffice("pptx", "ppsx"));
         assert!(!needs_soffice("odt", "pptx"));
         assert!(!needs_soffice("pdf", "pptx"));
         assert!(!needs_soffice("pptx", "pptx"));
+    }
+
+    #[test]
+    fn pptx_ppsx_is_a_copy() {
+        assert!(is_ooxml_copy("pptx", "ppsx"));
+        assert!(is_ooxml_copy("ppsx", "pptx"));
+        assert!(!is_ooxml_copy("pptx", "pptx"));
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("deck.pptx");
+        let output = dir.path().join("deck.ppsx");
+        std::fs::write(&input, b"PK fake-ooxml").unwrap();
+        copy_ooxml_deck(&input, &output).unwrap();
+        assert_eq!(std::fs::read(&output).unwrap(), b"PK fake-ooxml");
     }
 
     #[test]
@@ -159,10 +182,10 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let input = dir.path().join("deck.odp");
-        std::fs::write(&input, b"not a real odp").unwrap();
-        let out = dir.path().join("deck.pptx");
-        let err = convert_impress(&input, &out, "pptx").unwrap_err();
+        let input = dir.path().join("deck.pptx");
+        std::fs::write(&input, b"not a real pptx").unwrap();
+        let out = dir.path().join("deck.pdf");
+        let err = convert_impress(&input, &out, "pdf").unwrap_err();
         let msg = err.to_string();
         assert!(msg.to_lowercase().contains("libreoffice") || msg.contains("soffice"));
         assert!(!msg.contains("Run `"));

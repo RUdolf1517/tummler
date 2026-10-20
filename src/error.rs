@@ -23,10 +23,6 @@ pub enum TummlerError {
     #[error("spreadsheet conversion failed: {0}")]
     SpreadsheetError(String),
 
-    #[cfg(feature = "slides")]
-    #[error("office conversion failed: {0}")]
-    OfficeError(String),
-
     #[error("archive conversion failed: {0}")]
     ArchiveError(String),
 

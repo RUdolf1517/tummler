@@ -17,17 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: System deps
-        run: sudo apt-get update && sudo apt-get install -y pkg-config liblzma-dev libbz2-dev cmake
+        run: sudo apt-get update && sudo apt-get install -y pkg-config liblzma-dev libbz2-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.1
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      # Typst/hayro (feature slides) is release-only; compiling it made CI ~15 min.
       - name: cargo test
         run: |
           set -o pipefail
-          cargo test --no-default-features --color=always 2>&1 | tee cargo-test.log
+          cargo test --color=always 2>&1 | tee cargo-test.log
       - name: Publish cargo test lints
         if: failure()
         run: |
@@ -44,7 +43,7 @@ jobs:
       - name: cargo clippy
         run: |
           set -o pipefail
-          cargo clippy --no-default-features --all-targets --color=always -- -D warnings 2>&1 | tee cargo-clippy.log
+          cargo clippy --all-targets --color=always -- -D warnings 2>&1 | tee cargo-clippy.log
       - name: Publish clippy lints
         if: failure()
         run: |
