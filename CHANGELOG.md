@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-21
+
 - `zip` 9.0 / `calamine` 0.37 (after the zip 8.x yank; unifies with rust_xlsxwriter 0.100)
 - Allowlist: `m4b` `ogv` `vob` `caf` (ffmpeg), `ipynb` (pandoc)
 - SVG → png/jpg/… via resvg (svg is input-only)
