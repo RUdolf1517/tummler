@@ -6,24 +6,24 @@
 class Tummler < Formula
   desc "One CLI that mixes any file into any format"
   homepage "https://github.com/RUdolf1517/tummler"
-  version "0.1.0"
+  version "0.2.0"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/RUdolf1517/tummler/releases/download/v0.1.0/tummler-aarch64-apple-darwin.tar.gz"
-      sha256 "6fe6b23d5a6c95e6bf0daf8ef00831a6851541d13395867ea8b3b87865093725"
+      url "https://github.com/RUdolf1517/tummler/releases/download/v0.2.0/tummler-aarch64-apple-darwin.tar.gz"
+      sha256 "5f10303422666909898d55e6f13c90254ae84a36e6259bb83c223c86ca6fa076"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/RUdolf1517/tummler/releases/download/v0.1.0/tummler-x86_64-unknown-linux-gnu.tar.gz"
-      sha256 "561a3bcae0cb3b0c59068f5f01056694f6ab508f833a22bff1eab4f0cfffc296"
+      url "https://github.com/RUdolf1517/tummler/releases/download/v0.2.0/tummler-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "a21aa4cc19d596ff623894098031927ea4972d508ac8afe74bcc3955b79ff888"
     end
     on_arm do
-      url "https://github.com/RUdolf1517/tummler/releases/download/v0.1.0/tummler-aarch64-unknown-linux-gnu.tar.gz"
-      sha256 "4000f8bf5e5a7c786c5caaeb9785f65826571fd4d17f5f3b75da052ce6adfb45"
+      url "https://github.com/RUdolf1517/tummler/releases/download/v0.2.0/tummler-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "f0671575ce351f836c40a82d6cedfcf268be90b263de6f0db2a253b51cd01447"
     end
   end
 
