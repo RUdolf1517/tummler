@@ -34,19 +34,28 @@ Format last. That’s the whole trick.
 
 ## Install
 
-**One command — no Rust.** Downloads a binary into `~/.local/bin`:
+**No Rust** — binary from GitHub Releases into `~/.local/bin`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
 ```
 
-Needs a [GitHub Release](https://github.com/RUdolf1517/tummler/releases) (`v0.1.0+`). Until then, or if you already have a toolchain:
+**Homebrew**
 
 ```bash
+brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler
+brew install --HEAD tummler
+```
+
+**Cargo** (needs [Rust 1.74+](https://rustup.rs))
+
+```bash
+cargo install tummler
+# or, from git:
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
-macOS and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY.
+`curl` / a bottled `brew install` need a [GitHub Release](https://github.com/RUdolf1517/tummler/releases) (`v0.1.0+`). Until then use `cargo` or `brew install --HEAD`. macOS and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY.
 
 <details>
 <summary>From source</summary>
