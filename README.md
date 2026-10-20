@@ -276,6 +276,8 @@ cargo build --release
 
 `tummler -i`
 
+The name is Yiddish **tummler** (טומלער) — “the one who stirs things up.” In the Jewish Catskills resorts the tummler mixed the guests: introduced them, got the room going, kept the night alive. It also echoes **tumbler**, the mixing glass. This CLI mixes files the same way — any format into any other.
+
 Written by AI. Directed by [RUdolf1517](https://github.com/RUdolf1517).
 
 - GitHub: [github.com/RUdolf1517/tummler](https://github.com/RUdolf1517/tummler)

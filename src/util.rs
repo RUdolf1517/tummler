@@ -498,12 +498,17 @@ pub fn print_info() {
         "{} {} — {}",
         "tummler".bold(),
         format!("v{version}").dimmed(),
-        "a file acrobat".italic()
+        "טומלער".italic()
     );
     println!();
-    println!("One CLI that flips files into other formats — images, audio,");
-    println!("video, documents, archives. Native Rust where it can; ffmpeg");
-    println!("and pandoc where it must. You type the format last:");
+    println!("Yiddish tummler (טומלער): \"the one who stirs things up.\"");
+    println!("In the Catskills resorts the tummler mixed the guests —");
+    println!("introduced them, got the room going, kept the night alive.");
+    println!("Also a nod to tumbler, the mixing glass.");
+    println!();
+    println!("This CLI does the same to files: mix any format into any other.");
+    println!("Images, audio, video, documents, archives. Native Rust where");
+    println!("it can; ffmpeg and pandoc where it must. Format last:");
     println!();
     println!("  {}", "tummler photo.png jpg".cyan());
     println!("  {}", "tummler ./photos webp -r --skip-newer".cyan());
