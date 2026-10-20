@@ -28,19 +28,25 @@ jobs:
         run: |
           set -o pipefail
           cargo test --no-default-features --color=always 2>&1 | tee cargo-test.log
-      - name: Publish cargo test tail
+      - name: Publish cargo test lints
         if: failure()
-        run: |
-          tail -n 40 cargo-test.log | while IFS= read -r line; do
-            echo "::error::${line:0:180}"
-          done
+        run: python3 -c '
+          import pathlib,re
+          t=re.sub(r"\x1b\[[0-9;]*m","",pathlib.Path("cargo-test.log").read_text(errors="replace"))
+          hits=[ln[:200] for ln in t.splitlines() if "error:" in ln or "--> " in ln]
+          for ln in (hits[-40:] or t.splitlines()[-20:]):
+              print("::error::"+ln)
+          '
       - name: cargo clippy
         run: |
           set -o pipefail
           cargo clippy --no-default-features --all-targets --color=always -- -D warnings 2>&1 | tee cargo-clippy.log
-      - name: Publish clippy tail
+      - name: Publish clippy lints
         if: failure()
-        run: |
-          tail -n 40 cargo-clippy.log | while IFS= read -r line; do
-            echo "::error::${line:0:180}"
-          done
+        run: python3 -c '
+          import pathlib,re
+          t=re.sub(r"\x1b\[[0-9;]*m","",pathlib.Path("cargo-clippy.log").read_text(errors="replace"))
+          hits=[ln[:220] for ln in t.splitlines() if "error:" in ln or "warning:" in ln or "--> " in ln]
+          for ln in hits[-60:]:
+              print("::error::"+ln)
+          '

@@ -423,10 +423,10 @@ pub fn resolve_output_path(
             return Ok(out.join(format!("{stem}{target_ext_with_dot}")));
         }
 
-        if let Some(out_ext) = get_extension(out) {
-            if normalize_ext(&out_ext) == normalize_ext(&target_ext) {
-                return Ok(out.to_path_buf());
-            }
+        if let Some(out_ext) = get_extension(out)
+            && normalize_ext(&out_ext) == normalize_ext(&target_ext)
+        {
+            return Ok(out.to_path_buf());
         }
         if out.extension().is_none() && !target_ext.contains('.') {
             let mut p = out.as_os_str().to_os_string();

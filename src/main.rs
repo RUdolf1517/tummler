@@ -59,10 +59,10 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_OK;
     }
 
-    if cli.format.is_none() {
-        if let Some(fmt) = util::take_positional_format(&mut cli.inputs) {
-            cli.format = Some(fmt);
-        }
+    if cli.format.is_none()
+        && let Some(fmt) = util::take_positional_format(&mut cli.inputs)
+    {
+        cli.format = Some(fmt);
     }
 
     if cli.inputs.is_empty() {
@@ -169,13 +169,13 @@ fn run(mut cli: cli::Cli) -> i32 {
         ui::error("cannot use --all-sheets with stdin");
         return ui::EXIT_USAGE;
     }
-    if all_sheets {
-        if let Some(ref out) = cli.output {
-            if !util::is_stdio(out) && !output_is_directory_hint(out, multiple) {
-                ui::error("--all-sheets: -o must be a directory (or omit -o)");
-                return ui::EXIT_USAGE;
-            }
-        }
+    if all_sheets
+        && let Some(ref out) = cli.output
+        && !util::is_stdio(out)
+        && !output_is_directory_hint(out, multiple)
+    {
+        ui::error("--all-sheets: -o must be a directory (or omit -o)");
+        return ui::EXIT_USAGE;
     }
     if (cli.sheet.is_some() || cli.all_sheets)
         && !valid_inputs.iter().any(|p| {
@@ -186,16 +186,17 @@ fn run(mut cli: cli::Cli) -> i32 {
         ui::warn("--sheet/--all-sheets ignored (no spreadsheet inputs)");
     }
 
-    if multiple {
-        if let Some(ref out) = cli.output {
-            if !util::is_stdio(out) && out.exists() && out.is_file() {
-                ui::error(format!(
-                    "for multiple files -o must be a directory: {}",
-                    out.display()
-                ));
-                return ui::EXIT_USAGE;
-            }
-        }
+    if multiple
+        && let Some(ref out) = cli.output
+        && !util::is_stdio(out)
+        && out.exists()
+        && out.is_file()
+    {
+        ui::error(format!(
+            "for multiple files -o must be a directory: {}",
+            out.display()
+        ));
+        return ui::EXIT_USAGE;
     }
 
     if cli.dry_run {
@@ -594,12 +595,10 @@ fn run_stdio(
 
     match convert::convert_file(&input_path, &output, target_ext, &opts) {
         Ok(()) => {
-            if stdout_mode {
-                if let Err(e) = emit_stdout(&output) {
-                    ui::finish_clear(spin.as_ref());
-                    ui::error(format!("failed to write stdout: {e}"));
-                    return ui::EXIT_FAIL;
-                }
+            if stdout_mode && let Err(e) = emit_stdout(&output) {
+                ui::finish_clear(spin.as_ref());
+                ui::error(format!("failed to write stdout: {e}"));
+                return ui::EXIT_FAIL;
             }
             success += 1;
             ui::finish_ok(spin.as_ref(), format!("{label_in} → {label_out}"));
@@ -637,12 +636,11 @@ fn resolve_format(cli: &cli::Cli) -> Result<String, i32> {
     if let Some(ref f) = cli.format {
         return Ok(f.clone());
     }
-    if let Some(ref out) = cli.output {
-        if let Some(ext) = util::requested_ext_from_path(out) {
-            if util::is_supported_output(&ext) {
-                return Ok(ext);
-            }
-        }
+    if let Some(ref out) = cli.output
+        && let Some(ext) = util::requested_ext_from_path(out)
+        && util::is_supported_output(&ext)
+    {
+        return Ok(ext);
     }
     ui::error("specify a format: tummler input.png jpg");
     ui::info("or: tummler input.png -f jpeg");

@@ -106,10 +106,11 @@ pub fn convert_file(
         )));
     }
 
-    if let Some(parent) = output.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent).map_err(|e| TummlerError::IoError(e.to_string()))?;
-        }
+    if let Some(parent) = output.parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| TummlerError::IoError(e.to_string()))?;
     }
 
     let staging = staging_path(output);

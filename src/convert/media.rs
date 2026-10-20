@@ -58,16 +58,14 @@ pub fn convert_media(
                 "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp"
                     | "gif" | "m4v"
             );
-            if is_video {
-                if out_ext != "gif" {
-                    let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
-                    cmd.arg("-crf").arg(crf.to_string());
-                    // -preset is libx264/x265 only; webm/vp9 does not have it and ffmpeg fails
-                    if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
-                        cmd.arg("-preset").arg(if q >= 80 { "slow" } else { "medium" });
-                    }
+            if is_video && out_ext != "gif" {
+                let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
+                cmd.arg("-crf").arg(crf.to_string());
+                // -preset is libx264/x265 only; webm/vp9 does not have it and ffmpeg fails
+                if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
+                    cmd.arg("-preset").arg(if q >= 80 { "slow" } else { "medium" });
                 }
-            } else {
+            } else if !is_video {
                 let bitrate = match q {
                     90..=100 => "320k",
                     80..=89 => "256k",
