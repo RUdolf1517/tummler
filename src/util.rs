@@ -571,11 +571,11 @@ pub fn print_supported_formats() {
     println!(
         "  {} {}",
         "🎞  Slides".bold(),
-        "(native, no LibreOffice)".dimmed()
+        "(pptx→pdf native; odt/docx/md→pptx via pandoc)".dimmed()
     );
     println!(
         "     {}",
-        "pptx → pdf,  pdf → pptx".cyan()
+        "pptx/ppsx → pdf;  pptx ↔ ppsx;  odt/docx/md → pptx (pandoc)".cyan()
     );
     println!();
 
@@ -603,7 +603,7 @@ pub fn print_supported_formats() {
     println!("  {}  {}", "tummler doc.docx pdf".dimmed(), "→ doc.pdf".dimmed());
     println!("  {}  {}", "tummler table.xlsx csv".dimmed(), "→ table.csv".dimmed());
     println!("  {}  {}", "tummler slides.pptx pdf".dimmed(), "→ slides.pdf".dimmed());
-    println!("  {}  {}", "tummler slides.pdf pptx".dimmed(), "→ slides.pptx".dimmed());
+    println!("  {}  {}", "tummler notes.odt pptx".dimmed(), "→ notes.pptx".dimmed());
     println!("  {}  {}", "tummler archive.zip tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
     println!(
         "  {}  {}",

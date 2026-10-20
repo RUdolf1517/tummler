@@ -142,6 +142,11 @@ pub fn convert_file(
         Err(TummlerError::Other(format!(
             "native slides support .pptx/.ppsx → pdf (not .{source_ext})"
         )))
+    } else if normalize_ext(&source_ext) == "pdf" && target_ext == "pptx" {
+        Err(TummlerError::UnsupportedConversion(
+            source_ext,
+            target_ext.clone(),
+        ))
     } else if source_kind == FormatKind::Spreadsheet {
         if spreadsheet::is_tabular_ext(&target_ext) {
             spreadsheet::convert_spreadsheet(input, &staging, &target_ext, opts.sheet)

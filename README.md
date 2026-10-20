@@ -58,7 +58,7 @@ Intel Mac: `brew install --HEAD tummler` (builds with Rust).
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
-macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY. PowerPoint ↔ PDF is native (no LibreOffice).
+macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY. PowerPoint → PDF is native (no LibreOffice).
 
 <details>
 <summary>From source</summary>
@@ -126,11 +126,14 @@ tummler a.xlsx b.xls csv -o ./out/
 
 ### Slides
 
-PowerPoint ↔ PDF in-process (office2pdf + hayro). `.pptx` / `.ppsx` only — not `.ppt` / `.odp`. No LibreOffice.
+`pptx`/`ppsx` → PDF in-process (office2pdf / Typst). `pptx` ↔ `ppsx` is a copy (same OOXML package). Not `.ppt` / `.odp`. No LibreOffice.
+
+Document → deck goes through pandoc (`odt`/`docx`/`md` → `pptx`). `pdf → pptx` is not supported.
 
 ```bash
 tummler slides.pptx pdf
-tummler slides.pdf pptx
+tummler slides.pptx ppsx
+tummler notes.odt pptx
 ```
 
 ### Overwrite
@@ -191,7 +194,7 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 | **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a opus … | ffmpeg |
 | **Documents** | pdf docx odt html md tex rst epub csv json txt rtf | pandoc · LaTeX for PDF |
 | **Spreadsheets** | xlsx xlsm xlsb xls ods → csv txt | Rust (calamine) |
-| **Slides** | pptx → pdf, pdf → pptx | Rust (office2pdf, hayro) |
+| **Slides** | pptx/ppsx → pdf; pptx ↔ ppsx; odt/docx/md → pptx | Rust (office2pdf) · pandoc for documents → pptx |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
 
 ```bash
@@ -214,7 +217,7 @@ tummler ─┬─ images       →  image crate
          ├─ archives     →  zip / tar / gz / bz2 / xz / zstd
          ├─ audio/video  →  ffmpeg
          ├─ spreadsheets →  calamine (xlsx/xls/ods → csv/txt)
-         ├─ slides       →  office2pdf / hayro (pptx ↔ pdf)
+         ├─ slides       →  office2pdf (pptx/ppsx → pdf)
          └─ documents    →  pandoc
 ```
 

@@ -38,12 +38,11 @@ ctrlc = "3.4"
 libc = "0.2"
 calamine = "0.26"
 office2pdf = { version = "0.9.1", optional = true }
-hayro = { version = "0.8.0", optional = true }
 
 [features]
 default = ["slides"]
-# Typst + hayro: ~10 min compile. CI uses --no-default-features.
-slides = ["dep:office2pdf", "dep:hayro"]
+# Typst: ~10 min compile. CI uses --no-default-features.
+slides = ["dep:office2pdf"]
 
 [profile.release]
 opt-level = 3

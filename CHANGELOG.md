@@ -4,12 +4,13 @@
 
 - Spreadsheets: `tummler table.xlsx csv` / `txt` (xlsx, xlsm, xlsb, xls, ods via calamine)
 - `--sheet NAME` (first sheet by default); `--all-sheets` / `--sheet '*'` → `table-Sheet1.csv`
-- Slides: `tummler slides.pptx pdf` (office2pdf) and `tummler slides.pdf pptx` (hayro), no LibreOffice
-- Rust 1.99.1 / edition 2024; pdf→pptx streams pages and stores PNGs uncompressed in the zip
+- Slides: `tummler slides.pptx pdf` (office2pdf); `pptx` ↔ `ppsx` is a copy
+- Dropped raster `pdf → pptx` (hayro). `odt`/`docx`/`md` → `pptx` still goes through pandoc
+- Rust 1.99.1 / edition 2024
 - CI: tests/clippy without Typst (`--no-default-features`); `slides` is still the default build feature
 - Video `-q` maps to CRF 18–38; x264 preset `medium`/`veryfast` (never `slow`); webm CRF uses `-b:v 0`
 - Auto `-j` for media capped at 2; each ffmpeg gets `cpu/jobs` threads
-- pdf→pptx renders one page at a time; `.ppt`/`.odp` rejected (pptx/ppsx only)
+- `.ppt`/`.odp` rejected (pptx/ppsx only)
 - `-q` on AVIF; lossy WebP via ffmpeg; JPEG skips an extra RGB copy; EXIF orientation applied
 - Pack file→zip/tar without a temp copy; spreadsheet writes CSV/TXT without a second buffer
 
