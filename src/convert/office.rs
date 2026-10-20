@@ -74,7 +74,7 @@ fn pptx_to_pdf(input: &Path, output: &Path) -> Result<(), TummlerError> {
 
 fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
     let bytes = std::fs::read(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let pdf = Pdf::new(bytes).map_err(|e| TummlerError::OfficeError(e.to_string()))?;
+    let pdf = Pdf::new(bytes).map_err(|e| TummlerError::OfficeError(format!("{e:?}")))?;
 
     let cache = RenderCache::new();
     let interpreter_settings = InterpreterSettings::default();
