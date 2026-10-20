@@ -3,6 +3,8 @@
 ## 0.1.0 — 2026-10-20
 
 - Формат позиционный: `tummler img.png jpg` (или `-f jpeg` / `-o out.webp`)
+- Фиксы: `mut cli` (сборка), stdin+файлы, in-place `--overwrite`, sniff stdin, `-preset` только для mp4/mkv
+- Установка: `install.sh` одной командой
 - Спиннер на одном файле, прогресс-бар на батче (TTY, не в `--quiet`)
 - Параллельный батч: `-j/--jobs` (по умолчанию число CPU), prefetch ffmpeg/pandoc
 - Буферы 256 KiB на JPEG, walkdir + BufReader на архивах, `panic = abort` в release

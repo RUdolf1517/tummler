@@ -37,6 +37,55 @@ pub fn is_stdio(path: &Path) -> bool {
     path.as_os_str() == "-"
 }
 
+/// Расширение по magic bytes (для stdin без имени файла).
+pub fn sniff_suffix(header: &[u8]) -> &'static str {
+    if header.len() >= 8 && header.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return ".png";
+    }
+    if header.len() >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF {
+        return ".jpg";
+    }
+    if header.starts_with(b"GIF8") {
+        return ".gif";
+    }
+    if header.len() >= 12 && header.starts_with(b"RIFF") {
+        return match &header[8..12] {
+            b"WEBP" => ".webp",
+            b"WAVE" => ".wav",
+            b"AVI " => ".avi",
+            _ => "",
+        };
+    }
+    if header.starts_with(b"BM") {
+        return ".bmp";
+    }
+    if header.starts_with(b"%PDF") {
+        return ".pdf";
+    }
+    if header.starts_with(b"PK") {
+        return ".zip";
+    }
+    if header.len() >= 2 && header[0] == 0x1f && header[1] == 0x8b {
+        return ".gz";
+    }
+    if header.len() >= 8 && &header[4..8] == b"ftyp" {
+        return ".mp4";
+    }
+    if header.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        return ".webm";
+    }
+    if header.starts_with(b"fLaC") {
+        return ".flac";
+    }
+    if header.starts_with(b"OggS") {
+        return ".ogg";
+    }
+    if header.starts_with(b"ID3") {
+        return ".mp3";
+    }
+    ""
+}
+
 /// Если последний позиционный аргумент — имя формата (`jpg`, `webp`, `tar.gz`),
 /// забираем его из списка входов.
 ///
@@ -433,5 +482,15 @@ mod tests {
 
         let mut inputs = vec![PathBuf::from("-")];
         assert_eq!(take_positional_format(&mut inputs), None);
+    }
+
+    #[test]
+    fn test_sniff_suffix() {
+        assert_eq!(sniff_suffix(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]), ".png");
+        assert_eq!(sniff_suffix(&[0xFF, 0xD8, 0xFF, 0xE0]), ".jpg");
+        assert_eq!(sniff_suffix(b"GIF89a"), ".gif");
+        assert_eq!(sniff_suffix(b"%PDF-1.4"), ".pdf");
+        assert_eq!(sniff_suffix(b"????ftypisom"), ".mp4");
+        assert_eq!(sniff_suffix(b"xxxx"), "");
     }
 }

@@ -16,13 +16,19 @@ tummler a.png b.jpg avif -o ./out    # несколько файлов
 
 ## Установка
 
-### Через cargo (рекомендуется)
+Одной командой:
 
 ```bash
-cargo install tummler
+curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
 ```
 
-Требуется Rust 1.74+.
+Пока релиза нет — из этой ветки:
+
+```bash
+cargo install --git https://github.com/RUdolf1517/tummler --branch arena/ce98465f-tummler
+```
+
+Требуется Rust 1.74+ (для сборки из исходников). Скрипт ставит бинарник в `~/.local/bin`.
 
 ### Готовые бинарники
 

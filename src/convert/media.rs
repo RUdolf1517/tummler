@@ -44,10 +44,9 @@ pub fn convert_media(
             if out_ext != "gif" {
                 let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
                 cmd.arg("-crf").arg(crf.to_string());
-                if q >= 80 {
-                    cmd.arg("-preset").arg("slow");
-                } else {
-                    cmd.arg("-preset").arg("medium");
+                // -preset есть у libx264/x265; у webm/vp9 его нет и ffmpeg падает
+                if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
+                    cmd.arg("-preset").arg(if q >= 80 { "slow" } else { "medium" });
                 }
             }
         } else {

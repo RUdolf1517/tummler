@@ -8,7 +8,7 @@ mod util;
 
 use clap::{CommandFactory, Parser};
 use rayon::prelude::*;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -31,7 +31,7 @@ struct Task {
     label_out: String,
 }
 
-fn run(cli: cli::Cli) -> i32 {
+fn run(mut cli: cli::Cli) -> i32 {
     if let Some(shell) = cli.completions {
         let mut cmd = cli::Cli::command();
         completions::generate_completions(shell, &mut cmd);
@@ -63,6 +63,10 @@ fn run(cli: cli::Cli) -> i32 {
     let stdin_count = cli.inputs.iter().filter(|p| util::is_stdio(p)).count();
     if stdin_count > 1 {
         ui::error("stdin («-») можно указать только один раз");
+        return ui::EXIT_USAGE;
+    }
+    if stdin_count == 1 && cli.inputs.len() > 1 {
+        ui::error("stdin («-») нельзя смешивать с другими файлами");
         return ui::EXIT_USAGE;
     }
 
@@ -172,9 +176,9 @@ fn run(cli: cli::Cli) -> i32 {
                     continue;
                 }
             };
-        if input == &output {
-            ui::warn(format!(
-                "исходник и выход совпадают, пропуск: {}",
+        if input == &output && !cli.overwrite {
+            ui::error(format!(
+                "исходник и выход совпадают: {} (нужен --overwrite для записи на месте)",
                 input.display()
             ));
             failed += 1;
@@ -452,17 +456,23 @@ fn resolve_format(cli: &cli::Cli) -> Result<String, i32> {
             }
         }
     }
-    ui::error("укажите формат: tummler input.png -f jpeg");
-    ui::info("или: tummler input.png --format jpeg");
+    ui::error("укажите формат: tummler input.png jpg");
+    ui::info("или: tummler input.png -f jpeg");
     ui::info("или: tummler input.png -o output.webp");
     Err(ui::EXIT_USAGE)
 }
 
 fn materialize_stdin() -> io::Result<tempfile::NamedTempFile> {
+    let mut stdin = io::stdin().lock();
+    let mut header = [0u8; 16];
+    let n = stdin.read(&mut header)?;
+    let suffix = util::sniff_suffix(&header[..n]);
     let mut tmp = tempfile::Builder::new()
         .prefix("tummler-stdin-")
+        .suffix(suffix)
         .tempfile()?;
-    io::copy(&mut io::stdin().lock(), tmp.as_file_mut())?;
+    tmp.write_all(&header[..n])?;
+    io::copy(&mut stdin, tmp.as_file_mut())?;
     tmp.flush()?;
     Ok(tmp)
 }

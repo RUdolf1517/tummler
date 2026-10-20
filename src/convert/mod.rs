@@ -5,7 +5,7 @@ pub mod media;
 
 use crate::deps;
 use crate::error::TummlerError;
-use crate::util::{classify_ext, get_extension, normalize_ext, staging_path, FormatKind};
+use crate::util::{classify_ext, get_extension, is_stdio, normalize_ext, staging_path, FormatKind};
 use colored::Colorize;
 use std::path::Path;
 
@@ -22,10 +22,11 @@ pub fn prefetch_deps(
 
     if target_kind == FormatKind::Image {
         need_ffmpeg = inputs.iter().any(|p| {
-            matches!(
-                classify_ext(&get_extension(p).unwrap_or_default()),
-                FormatKind::Media | FormatKind::Document
-            )
+            is_stdio(p)
+                || matches!(
+                    classify_ext(&get_extension(p).unwrap_or_default()),
+                    FormatKind::Media | FormatKind::Document
+                )
         });
     }
 
@@ -111,7 +112,18 @@ pub fn convert_file(
                 source_ext,
                 target_ext.clone(),
             )),
-            _ => image::convert_image(input, &staging, quality),
+            FormatKind::Unknown => match image::convert_image(input, &staging, quality) {
+                Ok(()) => Ok(()),
+                Err(_) => media::convert_media(
+                    input,
+                    &staging,
+                    quality,
+                    ffmpeg_args,
+                    no_auto_install,
+                    assume_yes,
+                ),
+            },
+            FormatKind::Image => image::convert_image(input, &staging, quality),
         },
         FormatKind::Media => media::convert_media(
             input,
