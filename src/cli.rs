@@ -14,8 +14,11 @@ Examples:
   tummler ./photos webp -r --include '*.png' --skip-newer
   tummler photo.heic jpg --max 1920
   tummler table.xlsx csv
+  tummler table.csv xlsx
+  tummler table.xls xlsx
   tummler table.xlsx txt --sheet Sales
   tummler table.xlsx csv --all-sheets
+  tummler video.mkv mp4
   tummler slides.pptx pdf
   tummler report.docx pdf
   tummler notes.odt pdf

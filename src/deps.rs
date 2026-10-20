@@ -238,7 +238,7 @@ pub fn check_all() {
     println!(
         "  {} {}",
         "Native (no extra install):".bold(),
-        "images, archives, spreadsheets (xlsx→csv/txt)".dimmed()
+        "images, archives, spreadsheets (xlsx↔csv)".dimmed()
     );
     println!();
 

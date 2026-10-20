@@ -2,7 +2,7 @@ use crate::deps;
 use crate::error::TummlerError;
 use crate::geom::{ffmpeg_scale_filter, Geometry};
 use crate::interrupt;
-use crate::util::normalize_ext;
+use crate::util::{get_extension, normalize_ext};
 use std::path::Path;
 use std::process::Command;
 
@@ -32,6 +32,36 @@ fn is_audio_ext(ext: &str) -> bool {
     )
 }
 
+/// Remux (`-c copy`) when only the container changes: no `-q`, no resize, no extra args.
+pub fn can_try_stream_copy(
+    src_ext: &str,
+    dst_ext: &str,
+    quality: Option<u8>,
+    geometry: &Geometry,
+    ffmpeg_args: Option<&str>,
+) -> bool {
+    if quality.is_some() || !geometry.is_noop() || ffmpeg_args.is_some() {
+        return false;
+    }
+    let src = normalize_ext(src_ext);
+    let dst = normalize_ext(dst_ext);
+    if src == dst || src == "gif" || dst == "gif" {
+        return false;
+    }
+    (is_video_ext(&src) || is_audio_ext(&src)) && (is_video_ext(&dst) || is_audio_ext(&dst))
+}
+
+fn ffmpeg_copy(input: &Path, output: &Path) -> bool {
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"]);
+    cmd.arg("-i").arg(input);
+    cmd.args(["-c", "copy"]);
+    cmd.arg(output);
+    interrupt::run(&mut cmd)
+        .ok()
+        .is_some_and(|r| r.status.success())
+}
+
 /// Audio/video conversion via ffmpeg.
 #[allow(clippy::too_many_arguments)]
 pub fn convert_media(
@@ -47,16 +77,22 @@ pub fn convert_media(
     deps::ensure_available("ffmpeg", no_auto_install, assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("ffmpeg".into(), e))?;
 
-    let mut cmd = Command::new("ffmpeg");
-    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"]);
-    cmd.arg("-i");
-    cmd.arg(input);
-
+    let in_ext = get_extension(input).unwrap_or_default();
     let out_ext = output
         .extension()
         .and_then(|e| e.to_str())
         .map(normalize_ext)
         .unwrap_or_default();
+    if can_try_stream_copy(&in_ext, &out_ext, quality, geometry, ffmpeg_args)
+        && ffmpeg_copy(input, output)
+    {
+        return Ok(());
+    }
+
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"]);
+    cmd.arg("-i");
+    cmd.arg(input);
 
     let user_has = |flag: &str| {
         ffmpeg_args.is_some_and(|s| s.split_whitespace().any(|a| a == flag))
@@ -215,6 +251,7 @@ mod shell_words {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geom::Geometry;
 
     #[test]
     fn crf_stays_in_useful_range() {
@@ -231,5 +268,29 @@ mod tests {
         assert_eq!(x264_preset(100), "medium");
         assert_eq!(x264_preset(80), "medium");
         assert_eq!(x264_preset(79), "veryfast");
+    }
+
+    #[test]
+    fn stream_copy_only_for_container_change() {
+        let g = Geometry::default();
+        assert!(can_try_stream_copy("mkv", "mp4", None, &g, None));
+        assert!(can_try_stream_copy("mp4", "mkv", None, &g, None));
+        assert!(can_try_stream_copy("m4a", "mp4", None, &g, None));
+        assert!(!can_try_stream_copy("mkv", "mp4", Some(80), &g, None));
+        assert!(!can_try_stream_copy("mkv", "gif", None, &g, None));
+        assert!(!can_try_stream_copy("mp4", "mp4", None, &g, None));
+        assert!(!can_try_stream_copy("png", "mp4", None, &g, None));
+        let resized = Geometry {
+            max: Some(1920),
+            resize: None,
+        };
+        assert!(!can_try_stream_copy("mkv", "mp4", None, &resized, None));
+        assert!(!can_try_stream_copy(
+            "mkv",
+            "mp4",
+            None,
+            &g,
+            Some("-an")
+        ));
     }
 }

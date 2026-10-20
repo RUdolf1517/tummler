@@ -24,6 +24,7 @@ tummler ./photos webp -r --skip-newer -o ./out
 tummler video.mp4 gif
 tummler report.docx pdf
 tummler table.xlsx csv
+tummler table.csv xlsx
 tummler slides.pptx pdf
 tummler backup.zip tar.gz
 ```
@@ -109,6 +110,7 @@ tummler photo.png webp --resize 50%       # lossless unless -q
 tummler photo.png webp -q 80              # lossy (ffmpeg)
 tummler photo.png avif -q 70
 tummler photo.png jpg --resize 800x       # width 800, height follows
+tummler video.mkv mp4                     # remux (`-c copy`) if codecs fit
 tummler video.mp4 webm -q 80              # CRF ~22, not x264 “slow”
 tummler video.mp4 mp3 -q 85               # bitrate
 ```
@@ -125,10 +127,12 @@ tummler notes.md html
 
 ### Spreadsheets
 
-Excel / ODS → csv or a padded text table. First sheet by default. No LibreOffice.
+Excel / ODS → csv or a padded text table. csv / xls / ods → xlsx. First sheet by default. No LibreOffice.
 
 ```bash
 tummler table.xlsx csv
+tummler table.csv xlsx
+tummler table.xls xlsx
 tummler table.xlsx txt --sheet Sales
 tummler table.xlsx csv --all-sheets -o ./out
 tummler a.xlsx b.xls csv -o ./out/
@@ -204,7 +208,7 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 | **Images** | png jpg gif bmp ico tiff webp avif heic pnm tga dds hdr qoi exr | Rust · HEIC via ffmpeg |
 | **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a opus … | ffmpeg |
 | **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); md/html/tex/… | pandoc · LaTeX for pandoc PDF · optional LibreOffice |
-| **Spreadsheets** | xlsx xlsm xlsb xls ods → csv txt | Rust (calamine) |
+| **Spreadsheets** | xlsx/xls/ods → csv txt; csv/xls/ods → xlsx | Rust (calamine · rust_xlsxwriter) |
 | **Slides** | pptx/ppsx/odp/ppt → pdf and between decks if soffice is present; pptx ↔ ppsx copy; odt/docx/md → pptx | optional LibreOffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
 
@@ -227,7 +231,7 @@ tummler --completions fish > ~/.config/fish/completions/tummler.fish
 tummler ─┬─ images       →  image crate
          ├─ archives     →  zip / tar / gz / bz2 / xz / zstd
          ├─ audio/video  →  ffmpeg
-         ├─ spreadsheets →  calamine (xlsx/xls/ods → csv/txt)
+         ├─ spreadsheets →  calamine + rust_xlsxwriter (no LibreOffice)
          ├─ slides       →  soffice if already installed; pptx ↔ ppsx is a copy
          └─ documents    →  pandoc; Word/ODT → pdf via soffice if already installed
 ```

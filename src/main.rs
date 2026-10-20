@@ -156,20 +156,21 @@ fn run(mut cli: cli::Cli) -> i32 {
     }
 
     let all_sheets = wants_all_sheets(&cli);
+    let split_sheets = all_sheets && convert::spreadsheet::is_tabular_ext(&target_ext);
     let sheet_name = if all_sheets {
         None
     } else {
         cli.sheet.as_deref()
     };
-    if all_sheets && stdout_mode {
+    if split_sheets && stdout_mode {
         ui::error("cannot use --all-sheets with stdout");
         return ui::EXIT_USAGE;
     }
-    if all_sheets && valid_inputs.iter().any(|p| util::is_stdio(p)) {
+    if split_sheets && valid_inputs.iter().any(|p| util::is_stdio(p)) {
         ui::error("cannot use --all-sheets with stdin");
         return ui::EXIT_USAGE;
     }
-    if all_sheets
+    if split_sheets
         && let Some(ref out) = cli.output
         && !util::is_stdio(out)
         && !output_is_directory_hint(out, multiple)
@@ -179,8 +180,9 @@ fn run(mut cli: cli::Cli) -> i32 {
     }
     if (cli.sheet.is_some() || cli.all_sheets)
         && !valid_inputs.iter().any(|p| {
-            util::classify_ext(&util::get_extension(p).unwrap_or_default())
-                == util::FormatKind::Spreadsheet
+            let ext = util::get_extension(p).unwrap_or_default();
+            util::classify_ext(&ext) == util::FormatKind::Spreadsheet
+                || util::normalize_ext(&ext) == "csv"
         })
     {
         ui::warn("--sheet/--all-sheets ignored (no spreadsheet inputs)");
@@ -211,7 +213,7 @@ fn run(mut cli: cli::Cli) -> i32 {
                 &target_ext,
                 cli.output.as_deref(),
                 multiple,
-                all_sheets,
+                split_sheets,
                 sheet_name,
             ) {
                 Ok(p) => p,
@@ -256,7 +258,7 @@ fn run(mut cli: cli::Cli) -> i32 {
             &target_ext,
             cli.output.as_deref(),
             multiple,
-            all_sheets,
+            split_sheets,
             sheet_name,
         ) {
             Ok(p) => p,

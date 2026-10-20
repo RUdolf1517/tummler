@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Spreadsheets: `tummler table.xlsx csv` / `txt` (xlsx, xlsm, xlsb, xls, ods via calamine)
+- Spreadsheets: `tummler table.csv xlsx` and `xls`/`ods`/`xlsm`/`xlsb` → xlsx (rust_xlsxwriter, no LibreOffice)
+- Video: container change without `-q`/`--max`/`--resize` tries ffmpeg `-c copy`, then re-encodes if needed
 - `--sheet NAME` (first sheet by default); `--all-sheets` / `--sheet '*'` → `table-Sheet1.csv`
 - Dropped office2pdf/Typst. Slides (`pptx`/`odp`/`ppt` → pdf and between decks) use soffice only if already on PATH
 - Word/ODT (`doc`/`docx`/`odt`/`rtf` → pdf) via pandoc; soffice is used only if already on PATH (never required)

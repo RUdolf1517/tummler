@@ -159,6 +159,8 @@ pub fn convert_file(
             source_ext,
             target_ext.clone(),
         ))
+    } else if spreadsheet::can_write_xlsx(&source_ext) && spreadsheet::is_xlsx_ext(&target_ext) {
+        spreadsheet::convert_to_xlsx(input, &staging, opts.sheet)
     } else if source_kind == FormatKind::Spreadsheet {
         if spreadsheet::is_tabular_ext(&target_ext) {
             spreadsheet::convert_spreadsheet(input, &staging, &target_ext, opts.sheet)

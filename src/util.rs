@@ -346,7 +346,7 @@ pub enum FormatKind {
     Image,
     Media,        // audio/video via ffmpeg
     Document,     // via pandoc
-    Spreadsheet,  // xlsx/xls/ods via calamine (input only)
+    Spreadsheet,  // xlsx/xls/ods via calamine; xlsx via rust_xlsxwriter
     Archive,      // native
     Unknown,
 }
@@ -379,8 +379,12 @@ pub fn classify_ext(ext: &str) -> FormatKind {
 }
 
 pub fn is_supported_output(ext: &str) -> bool {
+    let ext = normalize_ext(ext);
+    if ext == "xlsx" {
+        return true;
+    }
     !matches!(
-        classify_ext(ext),
+        classify_ext(&ext),
         FormatKind::Unknown | FormatKind::Spreadsheet
     )
 }
@@ -586,11 +590,11 @@ pub fn print_supported_formats() {
     println!(
         "  {} {}",
         "📊  Spreadsheets".bold(),
-        "(native, xlsx/xls/ods → csv/txt)".dimmed()
+        "(native, no LibreOffice)".dimmed()
     );
     println!(
         "     {}",
-        "xlsx, xlsm, xlsb, xls, ods  →  csv, txt".cyan()
+        "xlsx/xlsm/xlsb/xls/ods → csv, txt;  csv/xls/ods → xlsx".cyan()
     );
     println!();
 
@@ -606,6 +610,7 @@ pub fn print_supported_formats() {
     println!("  {}  {}", "tummler video.mp4 webm -q 80".dimmed(), "→ video.webm".dimmed());
     println!("  {}  {}", "tummler doc.docx pdf".dimmed(), "→ doc.pdf".dimmed());
     println!("  {}  {}", "tummler table.xlsx csv".dimmed(), "→ table.csv".dimmed());
+    println!("  {}  {}", "tummler table.csv xlsx".dimmed(), "→ table.xlsx".dimmed());
     println!("  {}  {}", "tummler slides.pptx pdf".dimmed(), "→ slides.pdf".dimmed());
     println!("  {}  {}", "tummler notes.odt pptx".dimmed(), "→ notes.pptx".dimmed());
     println!("  {}  {}", "tummler archive.zip tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
@@ -655,7 +660,8 @@ mod tests {
         assert_eq!(classify_ext("ods"), FormatKind::Spreadsheet);
         assert_eq!(classify_ext("zip"), FormatKind::Archive);
         assert_eq!(classify_ext("xyz"), FormatKind::Unknown);
-        assert!(!is_supported_output("xlsx"));
+        assert!(is_supported_output("xlsx"));
+        assert!(!is_supported_output("xls"));
         assert!(is_supported_output("csv"));
     }
 

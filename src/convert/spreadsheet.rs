@@ -1,6 +1,7 @@
 use crate::error::TummlerError;
 use crate::util::normalize_ext;
 use calamine::{open_workbook_auto, Data, Reader};
+use rust_xlsxwriter::{Workbook, Worksheet, XlsxError};
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,17 @@ use std::path::{Path, PathBuf};
 /// csv / txt — the spreadsheet export targets.
 pub fn is_tabular_ext(ext: &str) -> bool {
     matches!(normalize_ext(ext).as_str(), "csv" | "txt")
+}
+
+pub fn is_xlsx_ext(ext: &str) -> bool {
+    normalize_ext(ext) == "xlsx"
+}
+
+/// csv / xls / ods / … → xlsx (not xlsx → xlsx).
+pub fn can_write_xlsx(src: &str) -> bool {
+    let src = normalize_ext(src);
+    src == "csv"
+        || matches!(src.as_str(), "xls" | "xlsm" | "xlsb" | "ods")
 }
 
 fn map_calamine(e: calamine::Error) -> TummlerError {
@@ -258,6 +270,210 @@ pub fn convert_spreadsheet(
     };
     write.map_err(|e| TummlerError::IoError(e.to_string()))?;
     f.flush().map_err(|e| TummlerError::IoError(e.to_string()))?;
+    Ok(())
+}
+
+fn map_xlsx(e: XlsxError) -> TummlerError {
+    TummlerError::SpreadsheetError(e.to_string())
+}
+
+fn excel_sheet_name(name: &str) -> String {
+    let mut s: String = name
+        .chars()
+        .map(|c| match c {
+            ':' | '\\' | '/' | '?' | '*' | '[' | ']' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    s = s.trim().trim_matches('\'').to_string();
+    if s.is_empty() {
+        s = "Sheet1".into();
+    }
+    const MAX: usize = 31;
+    if s.chars().count() > MAX {
+        s = s.chars().take(MAX).collect();
+    }
+    s
+}
+
+fn looks_like_number(s: &str) -> bool {
+    let t = s.trim();
+    if t.is_empty() {
+        return false;
+    }
+    let rest = t.strip_prefix('-').unwrap_or(t);
+    if rest.len() > 1 && rest.starts_with('0') && !rest.starts_with("0.") {
+        return false;
+    }
+    t.parse::<f64>().is_ok()
+}
+
+fn write_csv_field(
+    ws: &mut Worksheet,
+    row: u32,
+    col: u16,
+    s: &str,
+) -> Result<(), XlsxError> {
+    if s.is_empty() {
+        return Ok(());
+    }
+    if s == "TRUE" {
+        ws.write_boolean(row, col, true)?;
+        return Ok(());
+    }
+    if s == "FALSE" {
+        ws.write_boolean(row, col, false)?;
+        return Ok(());
+    }
+    if looks_like_number(s)
+        && let Ok(n) = s.trim().parse::<f64>()
+        && n.is_finite()
+    {
+        ws.write_number(row, col, n)?;
+        return Ok(());
+    }
+    ws.write_string(row, col, s)?;
+    Ok(())
+}
+
+fn write_data_cell(
+    ws: &mut Worksheet,
+    row: u32,
+    col: u16,
+    d: &Data,
+) -> Result<(), XlsxError> {
+    match d {
+        Data::Empty => Ok(()),
+        Data::String(s) => {
+            ws.write_string(row, col, s)?;
+            Ok(())
+        }
+        Data::Int(i) => {
+            ws.write_number(row, col, *i as f64)?;
+            Ok(())
+        }
+        Data::Float(f) => {
+            ws.write_number(row, col, *f)?;
+            Ok(())
+        }
+        Data::Bool(b) => {
+            ws.write_boolean(row, col, *b)?;
+            Ok(())
+        }
+        Data::DateTime(dt) => {
+            ws.write_string(row, col, &dt.to_string())?;
+            Ok(())
+        }
+        Data::DateTimeIso(s) | Data::DurationIso(s) => {
+            ws.write_string(row, col, s)?;
+            Ok(())
+        }
+        Data::Error(e) => {
+            ws.write_string(row, col, &e.to_string())?;
+            Ok(())
+        }
+    }
+}
+
+fn add_named_sheet<'a>(
+    workbook: &'a mut Workbook,
+    used: &mut HashSet<String>,
+    want: &str,
+) -> Result<&'a mut Worksheet, TummlerError> {
+    let name = unique_filename(used, &excel_sheet_name(want));
+    let ws = workbook.add_worksheet();
+    ws.set_name(&name).map_err(map_xlsx)?;
+    Ok(ws)
+}
+
+fn write_csv_sheet(ws: &mut Worksheet, path: &Path) -> Result<(), TummlerError> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_path(path)
+        .map_err(|e| TummlerError::SpreadsheetError(e.to_string()))?;
+    for (ri, rec) in rdr.records().enumerate() {
+        let rec = rec.map_err(|e| TummlerError::SpreadsheetError(e.to_string()))?;
+        let row = u32::try_from(ri).map_err(|_| {
+            TummlerError::SpreadsheetError("too many rows for xlsx".into())
+        })?;
+        if rec.len() > 16384 {
+            return Err(TummlerError::SpreadsheetError(
+                "too many columns for xlsx".into(),
+            ));
+        }
+        for (ci, field) in rec.iter().enumerate() {
+            let col = ci as u16;
+            write_csv_field(ws, row, col, field).map_err(map_xlsx)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_calamine_sheet(
+    ws: &mut Worksheet,
+    range: &calamine::Range<Data>,
+) -> Result<(), TummlerError> {
+    if range.is_empty() {
+        return Ok(());
+    }
+    for (ri, row) in range.rows().enumerate() {
+        let row_i = u32::try_from(ri).map_err(|_| {
+            TummlerError::SpreadsheetError("too many rows for xlsx".into())
+        })?;
+        if row.len() > 16384 {
+            return Err(TummlerError::SpreadsheetError(
+                "too many columns for xlsx".into(),
+            ));
+        }
+        for (ci, cell) in row.iter().enumerate() {
+            write_data_cell(ws, row_i, ci as u16, cell).map_err(map_xlsx)?;
+        }
+    }
+    Ok(())
+}
+
+/// csv / xls / ods / … → xlsx. No LibreOffice.
+pub fn convert_to_xlsx(
+    input: &Path,
+    output: &Path,
+    sheet: Option<&str>,
+) -> Result<(), TummlerError> {
+    let src = normalize_ext(&crate::util::get_extension(input).unwrap_or_default());
+    if !can_write_xlsx(&src) {
+        return Err(TummlerError::UnsupportedConversion(
+            src,
+            "xlsx".into(),
+        ));
+    }
+
+    let mut workbook = Workbook::new();
+    let mut used = HashSet::new();
+
+    if src == "csv" {
+        let name = sheet.unwrap_or("Sheet1");
+        let ws = add_named_sheet(&mut workbook, &mut used, name)?;
+        write_csv_sheet(ws, input)?;
+    } else {
+        let mut src_wb = open_workbook_auto(input).map_err(map_calamine)?;
+        let names = src_wb.sheet_names();
+        if names.is_empty() {
+            return Err(TummlerError::SpreadsheetError("empty workbook".into()));
+        }
+        let names = if let Some(want) = sheet {
+            vec![resolve_sheet_name(&names, Some(want))?]
+        } else {
+            names
+        };
+        for name in names {
+            let range = src_wb.worksheet_range(&name).map_err(map_calamine)?;
+            let ws = add_named_sheet(&mut workbook, &mut used, &name)?;
+            write_calamine_sheet(ws, &range)?;
+        }
+    }
+
+    workbook.save(output).map_err(map_xlsx)?;
     Ok(())
 }
 
@@ -527,5 +743,41 @@ mod tests {
             TummlerError::UnsupportedConversion(_, t) => assert_eq!(t, "png"),
             other => panic!("{other}"),
         }
+    }
+
+    #[test]
+    fn csv_to_xlsx_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let csv = dir.path().join("t.csv");
+        std::fs::write(&csv, "name,qty\napples,3\n\"hello, world\",TRUE\n").unwrap();
+        let out = dir.path().join("t.xlsx");
+        convert_to_xlsx(&csv, &out, None).unwrap();
+        let rows = read_sheet(&out, None).unwrap();
+        assert_eq!(rows[0], vec!["name", "qty"]);
+        assert_eq!(rows[1], vec!["apples", "3"]);
+        assert_eq!(rows[2], vec!["hello, world", "TRUE"]);
+    }
+
+    #[test]
+    fn csv_to_xlsx_named_sheet() {
+        let dir = tempfile::tempdir().unwrap();
+        let csv = dir.path().join("t.csv");
+        std::fs::write(&csv, "a\n").unwrap();
+        let out = dir.path().join("t.xlsx");
+        convert_to_xlsx(&csv, &out, Some("Sales/Q1")).unwrap();
+        let wb = open_workbook_auto(&out).unwrap();
+        assert_eq!(wb.sheet_names(), vec!["Sales_Q1"]);
+    }
+
+    #[test]
+    fn xlsx_write_sources() {
+        assert!(can_write_xlsx("csv"));
+        assert!(can_write_xlsx("xls"));
+        assert!(can_write_xlsx("ods"));
+        assert!(can_write_xlsx("xlsm"));
+        assert!(!can_write_xlsx("xlsx"));
+        assert!(!can_write_xlsx("txt"));
+        assert!(!can_write_xlsx("png"));
+        assert!(is_xlsx_ext("XLSX"));
     }
 }
