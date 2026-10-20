@@ -2,6 +2,7 @@ pub mod archive;
 pub mod document;
 pub mod image;
 pub mod media;
+#[cfg(feature = "slides")]
 pub mod office;
 pub mod spreadsheet;
 
@@ -40,7 +41,7 @@ pub fn prefetch_deps(
             matches!(
                 classify_ext(&ext),
                 FormatKind::Document | FormatKind::Unknown
-            ) && !office::is_office_pair(&ext, target_ext)
+            ) && !is_slide_pair(&ext, target_ext)
         });
 
     if target_kind == FormatKind::Image {
@@ -137,8 +138,8 @@ pub fn convert_file(
                 target_ext.clone(),
             ))
         }
-    } else if office::is_office_pair(&source_ext, &target_ext) {
-        office::convert_office(
+    } else if is_slide_pair(&source_ext, &target_ext) {
+        convert_slides(
             input,
             &staging,
             &target_ext,
@@ -198,5 +199,38 @@ pub fn convert_file(
             let _ = std::fs::remove_file(&staging);
             Err(e)
         }
+    }
+}
+
+fn is_slide_pair(src: &str, dst: &str) -> bool {
+    #[cfg(feature = "slides")]
+    {
+        office::is_office_pair(src, dst)
+    }
+    #[cfg(not(feature = "slides"))]
+    {
+        let _ = (src, dst);
+        false
+    }
+}
+
+fn convert_slides(
+    input: &Path,
+    staging: &Path,
+    target_ext: &str,
+    no_auto_install: bool,
+    assume_yes: bool,
+) -> Result<(), TummlerError> {
+    #[cfg(feature = "slides")]
+    {
+        office::convert_office(input, staging, target_ext, no_auto_install, assume_yes)
+    }
+    #[cfg(not(feature = "slides"))]
+    {
+        let _ = (no_auto_install, assume_yes);
+        Err(TummlerError::UnsupportedConversion(
+            crate::util::get_extension(input).unwrap_or_default(),
+            target_ext.to_string(),
+        ))
     }
 }

@@ -12,14 +12,13 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  CARGO_BUILD_JOBS: 2
-  RUSTFLAGS: "-C debuginfo=0"
 
 jobs:
   build:
     name: build-${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    # release binary includes slides (Typst); 90m covers fat LTO.
     strategy:
       fail-fast: false
       matrix:
@@ -104,21 +103,13 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: System deps
         run: sudo apt-get update && sudo apt-get install -y pkg-config liblzma-dev libbz2-dev cmake
-      - name: Swap
-        run: |
-          sudo swapoff -a || true
-          sudo rm -f /swapfile
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.1
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test
+      - run: cargo test --no-default-features

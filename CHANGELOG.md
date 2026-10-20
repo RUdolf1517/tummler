@@ -6,7 +6,7 @@
 - `--sheet NAME` (first sheet by default); `--all-sheets` / `--sheet '*'` → `table-Sheet1.csv`
 - Slides: `tummler slides.pptx pdf` (office2pdf) and `tummler slides.pdf pptx` (hayro), no LibreOffice
 - Rust 1.99.1 / edition 2024; pdf→pptx streams pages and stores PNGs uncompressed in the zip
-- CI: opt-level 2 on deps, no debuginfo (Typst/vello fit in GitHub RAM)
+- CI: tests/clippy without Typst (`--no-default-features`); `slides` is still the default build feature
 
 ## 0.1.0 — 2026-10-20
 

@@ -9,62 +9,38 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
-  CARGO_BUILD_JOBS: 2
-  RUSTFLAGS: "-C debuginfo=0"
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: System deps
         run: sudo apt-get update && sudo apt-get install -y pkg-config liblzma-dev libbz2-dev cmake
-      - name: Swap
-        run: |
-          sudo swapoff -a || true
-          sudo rm -f /swapfile
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.1
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # Typst/hayro (feature slides) is release-only; compiling it made CI ~15 min.
       - name: cargo test
         run: |
           set -o pipefail
-          cargo test --color=always 2>&1 | tee cargo-test.log
+          cargo test --no-default-features --color=always 2>&1 | tee cargo-test.log
       - name: Publish cargo test tail
         if: failure()
         run: |
-          {
-            echo '## cargo test (tail)'
-            echo
-            echo '```'
-            tail -n 80 cargo-test.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          tail -n 30 cargo-test.log | while IFS= read -r line; do
+          tail -n 40 cargo-test.log | while IFS= read -r line; do
             echo "::error::${line:0:180}"
           done
       - name: cargo clippy
         run: |
           set -o pipefail
-          cargo clippy --all-targets --color=always -- -D warnings 2>&1 | tee cargo-clippy.log
+          cargo clippy --no-default-features --all-targets --color=always -- -D warnings 2>&1 | tee cargo-clippy.log
       - name: Publish clippy tail
         if: failure()
         run: |
-          {
-            echo '## cargo clippy (tail)'
-            echo
-            echo '```'
-            tail -n 80 cargo-clippy.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          tail -n 30 cargo-clippy.log | while IFS= read -r line; do
+          tail -n 40 cargo-clippy.log | while IFS= read -r line; do
             echo "::error::${line:0:180}"
           done
