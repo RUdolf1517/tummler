@@ -11,7 +11,7 @@ Images · audio · video · documents · spreadsheets · archives.
 
 [![license](https://img.shields.io/badge/license-MIT-0b3d91?style=flat-square)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-111111?style=flat-square)](#install)
-[![rust](https://img.shields.io/badge/rust-1.92%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
+[![rust](https://img.shields.io/badge/rust-1.99%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
 
 </div>
 
@@ -51,7 +51,7 @@ brew install tummler
 
 Intel Mac: `brew install --HEAD tummler` (builds with Rust).
 
-**Cargo** (needs [Rust 1.92+](https://rustup.rs))
+**Cargo** (needs [Rust 1.99+](https://rustup.rs))
 
 ```bash
 # from git:

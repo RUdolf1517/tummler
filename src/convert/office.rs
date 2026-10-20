@@ -4,9 +4,16 @@ use hayro::hayro_interpret::InterpreterSettings;
 use hayro::hayro_syntax::Pdf;
 use hayro::vello_cpu::color::palette::css::WHITE;
 use hayro::{render, PixmapSettings, RenderCache, RenderSettings};
-use std::io::Write;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use zip::write::SimpleFileOptions;
+use zip::CompressionMethod;
+use zip::ZipWriter;
+
+const IO_BUF: usize = 256 * 1024;
+
+type PptxZip = ZipWriter<BufWriter<File>>;
 
 /// PowerPoint decks we convert natively (pptx → pdf via office2pdf, pdf → pptx via hayro).
 pub fn is_slide_ext(ext: &str) -> bool {
@@ -50,13 +57,17 @@ fn pptx_to_pdf(input: &Path, output: &Path) -> Result<(), TummlerError> {
             "native PDF export supports .pptx (not .{src})"
         )));
     }
-    let bytes = std::fs::read(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let result = office2pdf::convert_bytes(
-        &bytes,
-        office2pdf::config::Format::Pptx,
-        &office2pdf::config::ConvertOptions::default(),
-    )
-    .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
+    let result = if src == "ppsx" {
+        let bytes = std::fs::read(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
+        office2pdf::convert_bytes(
+            &bytes,
+            office2pdf::config::Format::Pptx,
+            &office2pdf::config::ConvertOptions::default(),
+        )
+        .map_err(|e| TummlerError::OfficeError(e.to_string()))?
+    } else {
+        office2pdf::convert(input).map_err(|e| TummlerError::OfficeError(e.to_string()))?
+    };
     if result.pdf.is_empty() {
         return Err(TummlerError::OfficeError(
             "office2pdf produced an empty PDF".into(),
@@ -69,6 +80,11 @@ fn pptx_to_pdf(input: &Path, output: &Path) -> Result<(), TummlerError> {
 fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
     let bytes = std::fs::read(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
     let pdf = Pdf::new(bytes).map_err(|e| TummlerError::OfficeError(e.to_string()))?;
+    let pages = pdf.pages();
+    if pages.is_empty() {
+        return Err(TummlerError::OfficeError("empty PDF".into()));
+    }
+    let n = pages.len();
 
     let cache = RenderCache::new();
     let interpreter = InterpreterSettings::default();
@@ -79,27 +95,54 @@ fn pdf_to_pptx(input: &Path, output: &Path) -> Result<(), TummlerError> {
         bg_color: WHITE,
     };
 
-    let mut images: Vec<(u32, u32, Vec<u8>)> = Vec::new();
-    for (idx, page) in pdf.pages().iter().enumerate() {
-        let rendered = render(
+    let mut iter = pages.iter().enumerate();
+    let (_, first) = iter.next().expect("non-empty");
+    let (w0, h0, png0) = raster_page(0, first, &cache, &interpreter, &render_settings, &pixmap_settings)?;
+    let cx = px_to_emu(w0);
+    let cy = px_to_emu(h0);
+
+    let mut zip = start_pptx(output, n, cx, cy)?;
+    append_slide(&mut zip, 1, w0, h0, &png0, cx, cy)?;
+    drop(png0);
+
+    for (idx, page) in iter {
+        let (w, h, png) = raster_page(
+            idx,
             page,
             &cache,
             &interpreter,
             &render_settings,
             &pixmap_settings,
-        );
-        let w = u32::from(rendered.width());
-        let h = u32::from(rendered.height());
-        let png = rendered
-            .into_png()
-            .map_err(|e| TummlerError::OfficeError(format!("page {}: {e}", idx + 1)))?;
-        images.push((w, h, png));
-    }
-    if images.is_empty() {
-        return Err(TummlerError::OfficeError("empty PDF".into()));
+        )?;
+        append_slide(&mut zip, idx + 1, w, h, &png, cx, cy)?;
     }
 
-    write_image_pptx(&images, output)
+    zip.finish()
+        .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
+    Ok(())
+}
+
+fn raster_page(
+    idx: usize,
+    page: &hayro::hayro_syntax::page::Page<'_>,
+    cache: &RenderCache<'_>,
+    interpreter: &InterpreterSettings,
+    render_settings: &RenderSettings,
+    pixmap_settings: &PixmapSettings,
+) -> Result<(u32, u32, Vec<u8>), TummlerError> {
+    let rendered = render(
+        page,
+        cache,
+        interpreter,
+        render_settings,
+        pixmap_settings,
+    );
+    let w = u32::from(rendered.width());
+    let h = u32::from(rendered.height());
+    let png = rendered
+        .into_png()
+        .map_err(|e| TummlerError::OfficeError(format!("page {}: {e}", idx + 1)))?;
+    Ok((w, h, png))
 }
 
 /// 144 dpi (2× 72) → EMU.
@@ -107,14 +150,23 @@ fn px_to_emu(px: u32) -> i64 {
     i64::from(px) * 914_400 / 144
 }
 
-fn write_image_pptx(images: &[(u32, u32, Vec<u8>)], output: &Path) -> Result<(), TummlerError> {
-    let (sw, sh, _) = images[0];
-    let cx = px_to_emu(sw);
-    let cy = px_to_emu(sh);
+fn xml_opts() -> SimpleFileOptions {
+    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated)
+}
 
-    let file = std::fs::File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let mut zip = zip::ZipWriter::new(file);
-    let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+fn png_opts() -> SimpleFileOptions {
+    // PNG is already compressed; storing avoids a second deflate pass.
+    SimpleFileOptions::default().compression_method(CompressionMethod::Stored)
+}
+
+fn zip_err(e: impl ToString) -> TummlerError {
+    TummlerError::OfficeError(e.to_string())
+}
+
+fn start_pptx(output: &Path, n: usize, cx: i64, cy: i64) -> Result<PptxZip, TummlerError> {
+    let file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let mut zip = ZipWriter::new(BufWriter::with_capacity(IO_BUF, file));
+    let xml = xml_opts();
 
     let mut types = String::from(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -125,45 +177,40 @@ fn write_image_pptx(images: &[(u32, u32, Vec<u8>)], output: &Path) -> Result<(),
 <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
 "#,
     );
-    for i in 1..=images.len() {
+    for i in 1..=n {
         types.push_str(&format!(
             "<Override PartName=\"/ppt/slides/slide{i}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.slide+xml\"/>\n"
         ));
     }
     types.push_str("</Types>");
-    zip.start_file("[Content_Types].xml", opts)
-        .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
-    zip.write_all(types.as_bytes())
-        .map_err(|e| TummlerError::IoError(e.to_string()))?;
+    zip.start_file("[Content_Types].xml", xml)
+        .map_err(zip_err)?;
+    zip.write_all(types.as_bytes())?;
 
-    zip.start_file("_rels/.rels", opts)
-        .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
+    zip.start_file("_rels/.rels", xml).map_err(zip_err)?;
     zip.write_all(
         br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
 </Relationships>"#,
-    )
-    .map_err(|e| TummlerError::IoError(e.to_string()))?;
+    )?;
 
-    let mut pres = format!(
+    let mut pres = String::from(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
  xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
 <p:sldIdLst>
-"#
+"#,
     );
     let mut pres_rels = String::from(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 "#,
     );
-    for i in 1..=images.len() {
+    for i in 1..=n {
         let id = 255 + i as u32;
-        pres.push_str(&format!(
-            "<p:sldId id=\"{id}\" r:id=\"rId{i}\"/>\n"
-        ));
+        pres.push_str(&format!("<p:sldId id=\"{id}\" r:id=\"rId{i}\"/>\n"));
         pres_rels.push_str(&format!(
             "<Relationship Id=\"rId{i}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide\" Target=\"slides/slide{i}.xml\"/>\n"
         ));
@@ -173,21 +220,28 @@ fn write_image_pptx(images: &[(u32, u32, Vec<u8>)], output: &Path) -> Result<(),
     ));
     pres_rels.push_str("</Relationships>");
 
-    zip.start_file("ppt/presentation.xml", opts)
-        .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
-    zip.write_all(pres.as_bytes())
-        .map_err(|e| TummlerError::IoError(e.to_string()))?;
-    zip.start_file("ppt/_rels/presentation.xml.rels", opts)
-        .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
-    zip.write_all(pres_rels.as_bytes())
-        .map_err(|e| TummlerError::IoError(e.to_string()))?;
+    zip.start_file("ppt/presentation.xml", xml)
+        .map_err(zip_err)?;
+    zip.write_all(pres.as_bytes())?;
+    zip.start_file("ppt/_rels/presentation.xml.rels", xml)
+        .map_err(zip_err)?;
+    zip.write_all(pres_rels.as_bytes())?;
+    Ok(zip)
+}
 
-    for (i, &(w, h, ref png)) in images.iter().enumerate() {
-        let n = i + 1;
-        let scx = px_to_emu(w);
-        let scy = px_to_emu(h);
-        let slide = format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+fn append_slide(
+    zip: &mut PptxZip,
+    n: usize,
+    w: u32,
+    h: u32,
+    png: &[u8],
+    cx: i64,
+    cy: i64,
+) -> Result<(), TummlerError> {
+    let scx = px_to_emu(w);
+    let scy = px_to_emu(h);
+    let slide = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
  xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
@@ -203,31 +257,39 @@ fn write_image_pptx(images: &[(u32, u32, Vec<u8>)], output: &Path) -> Result<(),
 </p:spTree></p:cSld>
 <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
 </p:sld>"#
-        );
-        zip.start_file(format!("ppt/slides/slide{n}.xml"), opts)
-            .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
-        zip.write_all(slide.as_bytes())
-            .map_err(|e| TummlerError::IoError(e.to_string()))?;
-        zip.start_file(format!("ppt/slides/_rels/slide{n}.xml.rels"), opts)
-            .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
-        zip.write_all(
-            format!(
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    );
+    zip.start_file(format!("ppt/slides/slide{n}.xml"), xml_opts())
+        .map_err(zip_err)?;
+    zip.write_all(slide.as_bytes())?;
+    zip.start_file(format!("ppt/slides/_rels/slide{n}.xml.rels"), xml_opts())
+        .map_err(zip_err)?;
+    zip.write_all(
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image{n}.png"/>
 </Relationships>"#
-            )
-            .as_bytes(),
         )
-        .map_err(|e| TummlerError::IoError(e.to_string()))?;
-        zip.start_file(format!("ppt/media/image{n}.png"), opts)
-            .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
-        zip.write_all(png)
-            .map_err(|e| TummlerError::IoError(e.to_string()))?;
-    }
+        .as_bytes(),
+    )?;
+    zip.start_file(format!("ppt/media/image{n}.png"), png_opts())
+        .map_err(zip_err)?;
+    zip.write_all(png)?;
+    Ok(())
+}
 
-    zip.finish()
-        .map_err(|e| TummlerError::OfficeError(e.to_string()))?;
+fn write_image_pptx(images: &[(u32, u32, Vec<u8>)], output: &Path) -> Result<(), TummlerError> {
+    if images.is_empty() {
+        return Err(TummlerError::OfficeError("empty PDF".into()));
+    }
+    let (sw, sh, _) = &images[0];
+    let cx = px_to_emu(*sw);
+    let cy = px_to_emu(*sh);
+    let mut zip = start_pptx(output, images.len(), cx, cy)?;
+    for (i, (w, h, png)) in images.iter().enumerate() {
+        append_slide(&mut zip, i + 1, *w, *h, png, cx, cy)?;
+    }
+    zip.finish().map_err(zip_err)?;
     Ok(())
 }
 

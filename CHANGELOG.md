@@ -5,6 +5,7 @@
 - Spreadsheets: `tummler table.xlsx csv` / `txt` (xlsx, xlsm, xlsb, xls, ods via calamine)
 - `--sheet NAME` (first sheet by default); `--all-sheets` / `--sheet '*'` → `table-Sheet1.csv`
 - Slides: `tummler slides.pptx pdf` (office2pdf) and `tummler slides.pdf pptx` (hayro), no LibreOffice
+- Rust 1.99.1 / edition 2024; pdf→pptx streams pages and stores PNGs uncompressed in the zip
 
 ## 0.1.0 — 2026-10-20
 
