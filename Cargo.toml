@@ -1,0 +1,48 @@
+[package]
+name = "tummler"
+version = "0.1.0"
+edition = "2021"
+description = "One CLI that mixes any file into any format — images, video, documents, archives"
+authors = ["RUdolf1517 <rudolfzinovev@protonmail.com>"]
+license = "MIT"
+repository = "https://github.com/RUdolf1517/tummler"
+homepage = "https://github.com/RUdolf1517/tummler"
+readme = "README.md"
+keywords = ["cli", "converter", "ffmpeg", "image", "transcode"]
+categories = ["command-line-utilities", "multimedia"]
+rust-version = "1.74"
+
+[[bin]]
+name = "tummler"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"
+thiserror = "2.0"
+image = { version = "0.25", features = ["webp", "avif"] }
+walkdir = "2.5"
+which = "6.0"
+colored = "2.1"
+indicatif = "0.17"
+dialoguer = "0.11"
+rayon = "1.10"
+zip = { version = "2.2", features = ["deflate", "bzip2", "xz", "zstd"] }
+tar = "0.4"
+flate2 = "1.0"
+bzip2 = "0.4"
+xz2 = "0.1"
+zstd = "0.13"
+tempfile = "3.10"
+ctrlc = "3.4"
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
