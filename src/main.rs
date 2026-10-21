@@ -34,6 +34,7 @@ struct Task {
     output: PathBuf,
     label_in: String,
     label_out: String,
+    sheet: Option<String>,
 }
 
 fn run(mut cli: cli::Cli) -> i32 {
@@ -58,10 +59,10 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_OK;
     }
 
-    if cli.format.is_none() {
-        if let Some(fmt) = util::take_positional_format(&mut cli.inputs) {
-            cli.format = Some(fmt);
-        }
+    if cli.format.is_none()
+        && let Some(fmt) = util::take_positional_format(&mut cli.inputs)
+    {
+        cli.format = Some(fmt);
     }
 
     if cli.inputs.is_empty() {
@@ -154,44 +155,92 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_USAGE;
     }
 
-    if multiple {
-        if let Some(ref out) = cli.output {
-            if !util::is_stdio(out) && out.exists() && out.is_file() {
-                ui::error(format!(
-                    "for multiple files -o must be a directory: {}",
-                    out.display()
-                ));
-                return ui::EXIT_USAGE;
-            }
-        }
+    let all_sheets = wants_all_sheets(&cli);
+    let split_sheets = all_sheets && convert::spreadsheet::is_tabular_ext(&target_ext);
+    let sheet_name = if all_sheets {
+        None
+    } else {
+        cli.sheet.as_deref()
+    };
+    if split_sheets && stdout_mode {
+        ui::error("cannot use --all-sheets with stdout");
+        return ui::EXIT_USAGE;
+    }
+    if split_sheets && valid_inputs.iter().any(|p| util::is_stdio(p)) {
+        ui::error("cannot use --all-sheets with stdin");
+        return ui::EXIT_USAGE;
+    }
+    if split_sheets
+        && let Some(ref out) = cli.output
+        && !util::is_stdio(out)
+        && !output_is_directory_hint(out, multiple)
+    {
+        ui::error("--all-sheets: -o must be a directory (or omit -o)");
+        return ui::EXIT_USAGE;
+    }
+    if (cli.sheet.is_some() || cli.all_sheets)
+        && !valid_inputs.iter().any(|p| {
+            let ext = util::get_extension(p).unwrap_or_default();
+            util::classify_ext(&ext) == util::FormatKind::Spreadsheet
+                || util::normalize_ext(&ext) == "csv"
+        })
+    {
+        ui::warn("--sheet/--all-sheets ignored (no spreadsheet inputs)");
+    }
+
+    if multiple
+        && let Some(ref out) = cli.output
+        && !util::is_stdio(out)
+        && out.exists()
+        && out.is_file()
+    {
+        ui::error(format!(
+            "for multiple files -o must be a directory: {}",
+            out.display()
+        ));
+        return ui::EXIT_USAGE;
     }
 
     if cli.dry_run {
         ui::info("dry-run, files will not be changed");
         for input in &valid_inputs {
-            let output = if stdout_mode {
-                PathBuf::from("-")
-            } else {
-                match util::resolve_output_path(input, &target_ext, cli.output.as_deref(), multiple)
-                {
-                    Ok(p) => p,
-                    Err(e) => {
-                        ui::error(format!("{}: {e}", input.display()));
-                        return ui::EXIT_USAGE;
-                    }
+            if stdout_mode {
+                println!("{} -> -", input.display());
+                continue;
+            }
+            let planned = match expand_outputs(
+                input,
+                &target_ext,
+                cli.output.as_deref(),
+                multiple,
+                split_sheets,
+                sheet_name,
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    ui::error(format!("{}: {e}", input.display()));
+                    return ui::EXIT_FAIL;
                 }
             };
-            let skip = cli.skip_newer && util::output_up_to_date(input, &output);
-            if skip {
-                println!("{} -> {}  skip", input.display(), output.display());
-            } else {
-                println!("{} -> {}", input.display(), output.display());
+            for (output, _) in planned {
+                let skip = cli.skip_newer && util::output_up_to_date(input, &output);
+                if skip {
+                    println!("{} -> {}  skip", input.display(), output.display());
+                } else {
+                    println!("{} -> {}", input.display(), output.display());
+                }
             }
         }
         return ui::EXIT_OK;
     }
 
-    if let Err(e) = convert::prefetch_deps(&valid_inputs, &target_ext, cli.no_auto_install, cli.yes)
+    if let Err(e) = convert::prefetch_deps(
+        &valid_inputs,
+        &target_ext,
+        cli.quality,
+        cli.no_auto_install,
+        cli.yes,
+    )
     {
         ui::error(e);
         return ui::EXIT_FAIL;
@@ -204,36 +253,49 @@ fn run(mut cli: cli::Cli) -> i32 {
 
     let mut tasks: Vec<Task> = Vec::with_capacity(valid_inputs.len());
     for input in &valid_inputs {
-        let output =
-            match util::resolve_output_path(input, &target_ext, cli.output.as_deref(), multiple) {
-                Ok(p) => p,
-                Err(e) => {
-                    ui::error(format!("{}: {e}", input.display()));
-                    failed += 1;
-                    continue;
-                }
-            };
-        if input == &output && !cli.overwrite && !cli.skip_newer {
-            ui::error(format!(
-                "source and destination are the same: {} (use --overwrite to replace in place)",
-                input.display()
-            ));
-            failed += 1;
-            continue;
+        let planned = match expand_outputs(
+            input,
+            &target_ext,
+            cli.output.as_deref(),
+            multiple,
+            split_sheets,
+            sheet_name,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                ui::error(format!("{}: {e}", input.display()));
+                failed += 1;
+                continue;
+            }
+        };
+        for (output, sheet) in planned {
+            if input == &output && !cli.overwrite && !cli.skip_newer {
+                ui::error(format!(
+                    "source and destination are the same: {} (use --overwrite to replace in place)",
+                    input.display()
+                ));
+                failed += 1;
+                continue;
+            }
+            tasks.push(Task {
+                label_in: input.display().to_string(),
+                label_out: output.display().to_string(),
+                input: input.clone(),
+                output,
+                sheet,
+            });
         }
-        tasks.push(Task {
-            label_in: input.display().to_string(),
-            label_out: output.display().to_string(),
-            input: input.clone(),
-            output,
-        });
     }
 
     if tasks.is_empty() {
         return ui::EXIT_FAIL;
     }
 
-    let jobs = resolve_jobs(cli.jobs, tasks.len());
+    let jobs = resolve_jobs(cli.jobs, tasks.len(), &target_ext);
+    let cpu = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let ffmpeg_threads = if jobs <= 1 { 0 } else { (cpu / jobs).max(1) };
     let ffmpeg_args = cli.ffmpeg_args.clone();
     let quality = cli.quality;
     let overwrite = cli.overwrite;
@@ -259,6 +321,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         yes,
         verbose,
         geometry: &geometry,
+        ffmpeg_threads,
     };
 
     let run_one = |t: &Task| {
@@ -387,6 +450,7 @@ struct JobSpec<'a> {
     yes: bool,
     verbose: bool,
     geometry: &'a Geometry,
+    ffmpeg_threads: usize,
 }
 
 fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
@@ -403,6 +467,8 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
         assume_yes: spec.yes,
         verbose: spec.verbose,
         geometry: spec.geometry,
+        sheet: t.sheet.as_deref(),
+        ffmpeg_threads: spec.ffmpeg_threads,
     };
     match convert::convert_file(&t.input, &t.output, spec.target_ext, &opts) {
         Ok(()) => TaskResult::Ok {
@@ -410,6 +476,35 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
             bout: util::file_size(&t.output),
         },
         Err(e) => TaskResult::Err(e.to_string()),
+    }
+}
+
+fn wants_all_sheets(cli: &cli::Cli) -> bool {
+    cli.all_sheets || cli.sheet.as_deref() == Some("*")
+}
+
+fn output_is_directory_hint(out: &Path, multiple_inputs: bool) -> bool {
+    out.to_string_lossy().ends_with('/')
+        || out.to_string_lossy().ends_with('\\')
+        || (out.exists() && out.is_dir())
+        || multiple_inputs
+}
+
+fn expand_outputs(
+    input: &Path,
+    target_ext: &str,
+    output_arg: Option<&Path>,
+    multiple_inputs: bool,
+    all_sheets: bool,
+    sheet: Option<&str>,
+) -> Result<Vec<(PathBuf, Option<String>)>, String> {
+    let base = util::resolve_output_path(input, target_ext, output_arg, multiple_inputs)?;
+    let is_sheet = util::classify_ext(&util::get_extension(input).unwrap_or_default())
+        == util::FormatKind::Spreadsheet;
+    if all_sheets && is_sheet {
+        convert::spreadsheet::plan_outputs(input, &base, true, None).map_err(|e| e.to_string())
+    } else {
+        Ok(vec![(base, sheet.map(str::to_string))])
     }
 }
 
@@ -501,6 +596,7 @@ fn run_stdio(
     }
 
     let bin = util::file_size(&input_path);
+    let sheet = cli.sheet.clone();
     let opts = ConvertOpts {
         quality: cli.quality,
         overwrite: cli.overwrite || stdout_mode || (cli.skip_newer && output.exists()),
@@ -509,16 +605,16 @@ fn run_stdio(
         assume_yes: cli.yes,
         verbose: cli.verbose,
         geometry,
+        sheet: sheet.as_deref().filter(|s| *s != "*"),
+        ffmpeg_threads: 0,
     };
 
     match convert::convert_file(&input_path, &output, target_ext, &opts) {
         Ok(()) => {
-            if stdout_mode {
-                if let Err(e) = emit_stdout(&output) {
-                    ui::finish_clear(spin.as_ref());
-                    ui::error(format!("failed to write stdout: {e}"));
-                    return ui::EXIT_FAIL;
-                }
+            if stdout_mode && let Err(e) = emit_stdout(&output) {
+                ui::finish_clear(spin.as_ref());
+                ui::error(format!("failed to write stdout: {e}"));
+                return ui::EXIT_FAIL;
             }
             success += 1;
             ui::finish_ok(spin.as_ref(), format!("{label_in} → {label_out}"));
@@ -541,7 +637,7 @@ fn run_stdio(
     }
 }
 
-fn resolve_jobs(requested: usize, nfiles: usize) -> usize {
+fn resolve_jobs(requested: usize, nfiles: usize, target_ext: &str) -> usize {
     if nfiles <= 1 {
         return 1;
     }
@@ -549,19 +645,24 @@ fn resolve_jobs(requested: usize, nfiles: usize) -> usize {
         .map(|n| n.get())
         .unwrap_or(4);
     let n = if requested == 0 { auto } else { requested };
-    n.min(nfiles).max(1)
+    let n = n.min(nfiles).max(1);
+    // ffmpeg is already internally parallel; auto `-j` of N×N cores thrashes.
+    if requested == 0 && util::classify_ext(target_ext) == util::FormatKind::Media {
+        n.min(2)
+    } else {
+        n
+    }
 }
 
 fn resolve_format(cli: &cli::Cli) -> Result<String, i32> {
     if let Some(ref f) = cli.format {
         return Ok(f.clone());
     }
-    if let Some(ref out) = cli.output {
-        if let Some(ext) = util::requested_ext_from_path(out) {
-            if util::is_supported_output(&ext) {
-                return Ok(ext);
-            }
-        }
+    if let Some(ref out) = cli.output
+        && let Some(ext) = util::requested_ext_from_path(out)
+        && util::is_supported_output(&ext)
+    {
+        return Ok(ext);
     }
     ui::error("specify a format: tummler input.png jpg");
     ui::info("or: tummler input.png -f jpeg");
@@ -581,6 +682,20 @@ fn materialize_stdin() -> io::Result<tempfile::NamedTempFile> {
     tmp.write_all(&header[..n])?;
     io::copy(&mut stdin, tmp.as_file_mut())?;
     tmp.flush()?;
+    // Magic is only `PK` — distinguish zip from OOXML/ODF so convert routes right.
+    if suffix == ".zip" {
+        let kind = convert::archive::peek_zip_kind(tmp.path());
+        if kind != ".zip" {
+            let mut better = tempfile::Builder::new()
+                .prefix("tummler-stdin-")
+                .suffix(kind)
+                .tempfile()?;
+            let mut src = std::fs::File::open(tmp.path())?;
+            io::copy(&mut src, better.as_file_mut())?;
+            better.flush()?;
+            return Ok(better);
+        }
+    }
     Ok(tmp)
 }
 

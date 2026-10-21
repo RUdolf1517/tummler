@@ -7,12 +7,26 @@ use crate::ui::ColorWhen;
 const AFTER_HELP: &str = "\
 Examples:
   tummler photo.png jpg
+  tummler icon.svg png
   tummler photo.png jpeg -q 80
   tummler photo.png -o photo.webp
   cat in.png | tummler - jpeg > out.jpeg
   tummler -- -file.png jpeg
   tummler ./photos webp -r --include '*.png' --skip-newer
   tummler photo.heic jpg --max 1920
+  tummler table.xlsx csv
+  tummler table.csv xlsx
+  tummler table.xls xlsx
+  tummler table.xlsx txt --sheet Sales
+  tummler table.xlsx csv --all-sheets
+  tummler video.mkv mp4
+  tummler slides.pptx pdf
+  tummler report.docx pdf
+  tummler notes.odt pdf
+  tummler notes.odt pptx
+  tummler deck.odp pptx
+  tummler report.pdf png
+  tummler report.pdf docx
   tummler -i
 
 Exit codes:
@@ -133,6 +147,14 @@ pub struct Cli {
     /// Extra ffmpeg arguments
     #[arg(long = "ffmpeg-args", value_name = "ARGS")]
     pub ffmpeg_args: Option<String>,
+
+    /// Spreadsheet sheet (`*` = every sheet, each to its own file)
+    #[arg(long = "sheet", value_name = "NAME")]
+    pub sheet: Option<String>,
+
+    /// Every spreadsheet sheet → its own file (`table-Sheet1.csv`)
+    #[arg(long = "all-sheets", conflicts_with = "sheet")]
+    pub all_sheets: bool,
 
     /// Shell completion script
     #[arg(long = "completions", value_name = "SHELL", value_enum)]

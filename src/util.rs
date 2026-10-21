@@ -248,7 +248,13 @@ pub fn sniff_suffix(header: &[u8]) -> &'static str {
         ) {
             return ".heic";
         }
+        if matches!(brand, b"avif" | b"avis" | b"avio") {
+            return ".avif";
+        }
         return ".mp4";
+    }
+    if header.len() >= 8 && header.starts_with(&[0xD0, 0xCF, 0x11, 0xE0]) {
+        return ".xls";
     }
     if header.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
         return ".webm";
@@ -341,30 +347,34 @@ pub fn staging_path(output: &Path) -> PathBuf {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FormatKind {
     Image,
-    Media,    // audio/video via ffmpeg
-    Document, // via pandoc
-    Archive,  // native
+    Media,        // audio/video via ffmpeg
+    Document,     // via pandoc
+    Spreadsheet,  // xlsx/xls/ods via calamine; xlsx via rust_xlsxwriter
+    Archive,      // native
     Unknown,
 }
 
 pub fn classify_ext(ext: &str) -> FormatKind {
     let ext = normalize_ext(ext);
     match ext.as_str() {
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "ico" | "tiff" | "tif"
-        | "webp" | "avif" | "pnm" | "pbm" | "pgm" | "ppm" | "tga" | "dds"
-        | "hdr" | "farbfeld" | "ff" | "qoi" | "exr" | "openexr"
-        | "heic" | "heif" => FormatKind::Image,
+        "png" | "jpg" | "gif" | "bmp" | "ico" | "tiff"
+        | "webp" | "avif" | "heic" | "heif" | "svg" | "svgz" => FormatKind::Image,
 
         "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg"
         | "3gp" | "m4v" | "ts" | "mts" | "m2ts" | "mxf" | "asf" | "rm" | "rmvb"
+        | "ogv" | "vob"
         | "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "opus" | "wma"
-        | "aiff" | "aif" | "alac" | "ac3" | "dts" | "amr" | "au" | "ra" => FormatKind::Media,
+        | "aiff" | "aif" | "alac" | "ac3" | "dts" | "amr" | "au" | "ra"
+        | "m4b" | "caf" => FormatKind::Media,
 
-        "pdf" | "docx" | "odt" | "html" | "htm" | "md" | "markdown" | "tex"
-        | "rst" | "epub" | "pptx" | "ppt" | "csv" | "json" | "txt" | "rtf"
-        | "org" | "adoc" | "djvu" | "fb2" => FormatKind::Document,
+        "pdf" | "docx" | "doc" | "odt" | "html" | "md" | "tex"
+        | "rst" | "epub" | "pptx" | "ppt" | "ppsx" | "pps" | "odp"
+        | "csv" | "json" | "txt" | "rtf"
+        | "org" | "adoc" | "djvu" | "fb2" | "ipynb" => FormatKind::Document,
 
-        "zip" | "tar" | "tar.gz" | "tgz" | "tar.bz2" | "tar.xz" | "gz" | "bz2"
+        "xlsx" | "xlsm" | "xlsb" | "xls" | "ods" => FormatKind::Spreadsheet,
+
+        "zip" | "tar" | "tar.gz" | "tar.bz2" | "tar.xz" | "gz" | "bz2"
         | "xz" | "zst" | "tar.zst" => FormatKind::Archive,
 
         _ => FormatKind::Unknown,
@@ -372,11 +382,35 @@ pub fn classify_ext(ext: &str) -> FormatKind {
 }
 
 pub fn is_supported_output(ext: &str) -> bool {
-    classify_ext(ext) != FormatKind::Unknown
+    let ext = normalize_ext(ext);
+    if ext == "xlsx" {
+        return true;
+    }
+    // svg/svgz are inputs (resvg → raster). xls/ods stay input-only.
+    if matches!(ext.as_str(), "svg" | "svgz") {
+        return false;
+    }
+    !matches!(
+        classify_ext(&ext),
+        FormatKind::Unknown | FormatKind::Spreadsheet
+    )
 }
 
 pub fn is_heif(ext: &str) -> bool {
     matches!(normalize_ext(ext).as_str(), "heic" | "heif")
+}
+
+pub fn is_svg(ext: &str) -> bool {
+    matches!(normalize_ext(ext).as_str(), "svg" | "svgz")
+}
+
+pub fn is_pdf(ext: &str) -> bool {
+    normalize_ext(ext) == "pdf"
+}
+
+/// Images ffmpeg must handle (no rav1e / no libheif in-process).
+pub fn is_ffmpeg_image(ext: &str) -> bool {
+    is_heif(ext) || normalize_ext(ext) == "avif"
 }
 
 /// Resolve the output path.
@@ -413,10 +447,10 @@ pub fn resolve_output_path(
             return Ok(out.join(format!("{stem}{target_ext_with_dot}")));
         }
 
-        if let Some(out_ext) = get_extension(out) {
-            if normalize_ext(&out_ext) == normalize_ext(&target_ext) {
-                return Ok(out.to_path_buf());
-            }
+        if let Some(out_ext) = get_extension(out)
+            && normalize_ext(&out_ext) == normalize_ext(&target_ext)
+        {
+            return Ok(out.to_path_buf());
         }
         if out.extension().is_none() && !target_ext.contains('.') {
             let mut p = out.as_os_str().to_os_string();
@@ -505,10 +539,12 @@ pub fn print_info() {
     println!("Also a nod to tumbler, the mixing glass.");
     println!();
     println!("This CLI does the same to files: mix any format into any other.");
-    println!("Images, audio, video, documents, archives. Native Rust where");
+    println!("Images, audio, video, documents, spreadsheets, archives. Native Rust where");
     println!("it can; ffmpeg and pandoc where it must. Format last:");
     println!();
     println!("  {}", "tummler photo.png jpg".cyan());
+    println!("  {}", "tummler table.xlsx csv".cyan());
+    println!("  {}", "tummler slides.pptx pdf".cyan());
     println!("  {}", "tummler ./photos webp -r --skip-newer".cyan());
     println!();
     println!("{}", "This project was written by AI.".dimmed());
@@ -530,10 +566,14 @@ pub fn print_supported_formats() {
     println!("{}", "Supported tummler formats:".bold());
     println!();
 
-    println!("  {} {}", "🖼  Images".bold(), "(native, no dependencies)".dimmed());
+    println!(
+        "  {} {}",
+        "🖼  Images".bold(),
+        "(native; svg via resvg; HEIC/AVIF via ffmpeg)".dimmed()
+    );
     println!(
         "     {}",
-        "png, jpg/jpeg, gif, bmp, ico, tiff, webp, avif, heic/heif (ffmpeg), pnm, tga, dds, hdr, farbfeld, qoi, exr"
+        "png, jpg/jpeg, gif, bmp, ico, tiff, webp, svg→raster (resvg), avif/heic (ffmpeg)"
             .cyan()
     );
     println!();
@@ -541,18 +581,48 @@ pub fn print_supported_formats() {
     println!("  {} {}", "🎬  Audio/Video".bold(), "(requires ffmpeg)".dimmed());
     println!(
         "     {}",
-        "mp4, avi, mkv, mov, webm, flv, wmv, mpg, 3gp, m4v, ts, gif (from video)".cyan()
+        "mp4, avi, mkv, mov, webm, flv, wmv, mpg, 3gp, m4v, ts, ogv, vob, gif (from video)".cyan()
     );
     println!(
         "     {}",
-        "mp3, wav, flac, aac, ogg, m4a, opus, wma, aiff, alac".cyan()
+        "mp3, wav, flac, aac, ogg, m4a, m4b, opus, wma, aiff, alac, caf".cyan()
     );
     println!();
 
-    println!("  {} {}", "📄  Documents".bold(), "(requires pandoc)".dimmed());
+    println!(
+        "  {} {}",
+        "📄  Documents".bold(),
+        "(pandoc; Word/ODT → pdf uses soffice if already installed)".dimmed()
+    );
     println!(
         "     {}",
-        "pdf, docx, odt, html, md, tex, rst, epub, pptx, csv, json, txt, rtf".cyan()
+        "pdf, docx, doc, odt, html, md, tex, rst, epub, csv, json, txt, rtf, ipynb".cyan()
+    );
+    println!(
+        "     {}",
+        "pdf → png/jpg (poppler, first page);  pdf → docx (soffice if present, else pdftotext+pandoc)".cyan()
+    );
+    println!();
+
+    println!(
+        "  {} {}",
+        "🎞  Slides".bold(),
+        "(soffice if already installed; never auto-installed)".dimmed()
+    );
+    println!(
+        "     {}",
+        "pptx/ppsx/odp/ppt → pdf and between decks via soffice;  pptx ↔ ppsx copy;  odt/docx/md → pptx (pandoc)".cyan()
+    );
+    println!();
+
+    println!(
+        "  {} {}",
+        "📊  Spreadsheets".bold(),
+        "(native, no LibreOffice)".dimmed()
+    );
+    println!(
+        "     {}",
+        "xlsx/xlsm/xlsb/xls/ods → csv, txt;  csv/xls/ods → xlsx".cyan()
     );
     println!();
 
@@ -565,8 +635,15 @@ pub fn print_supported_formats() {
 
     println!("{}", "Examples:".dimmed());
     println!("  {}  {}", "tummler photo.png jpeg".dimmed(), "→ photo.jpeg".dimmed());
+    println!("  {}  {}", "tummler icon.svg png".dimmed(), "→ icon.png".dimmed());
     println!("  {}  {}", "tummler video.mp4 webm -q 80".dimmed(), "→ video.webm".dimmed());
     println!("  {}  {}", "tummler doc.docx pdf".dimmed(), "→ doc.pdf".dimmed());
+    println!("  {}  {}", "tummler report.pdf png".dimmed(), "→ report.png".dimmed());
+    println!("  {}  {}", "tummler report.pdf docx".dimmed(), "→ report.docx".dimmed());
+    println!("  {}  {}", "tummler table.xlsx csv".dimmed(), "→ table.csv".dimmed());
+    println!("  {}  {}", "tummler table.csv xlsx".dimmed(), "→ table.xlsx".dimmed());
+    println!("  {}  {}", "tummler slides.pptx pdf".dimmed(), "→ slides.pdf".dimmed());
+    println!("  {}  {}", "tummler notes.odt pptx".dimmed(), "→ notes.pptx".dimmed());
     println!("  {}  {}", "tummler archive.zip tar.gz".dimmed(), "→ archive.tar.gz".dimmed());
     println!(
         "  {}  {}",
@@ -601,11 +678,45 @@ mod tests {
     fn test_classify() {
         assert_eq!(classify_ext("png"), FormatKind::Image);
         assert_eq!(classify_ext("heic"), FormatKind::Image);
+        assert_eq!(classify_ext("svg"), FormatKind::Image);
         assert_eq!(classify_ext("jpeg"), FormatKind::Image);
         assert_eq!(classify_ext("mp4"), FormatKind::Media);
+        assert_eq!(classify_ext("m4b"), FormatKind::Media);
+        assert_eq!(classify_ext("ogv"), FormatKind::Media);
+        assert_eq!(classify_ext("caf"), FormatKind::Media);
         assert_eq!(classify_ext("pdf"), FormatKind::Document);
+        assert!(is_pdf("pdf"));
+        assert!(is_pdf(".PDF"));
+        assert!(!is_pdf("png"));
+        assert_eq!(classify_ext("ipynb"), FormatKind::Document);
+        assert_eq!(classify_ext("docx"), FormatKind::Document);
+        assert_eq!(classify_ext("doc"), FormatKind::Document);
+        assert_eq!(classify_ext("odt"), FormatKind::Document);
+        assert_eq!(classify_ext("pptx"), FormatKind::Document);
+        assert_eq!(classify_ext("odp"), FormatKind::Document);
+        assert_eq!(classify_ext("xlsx"), FormatKind::Spreadsheet);
+        assert_eq!(classify_ext("xls"), FormatKind::Spreadsheet);
+        assert_eq!(classify_ext("ods"), FormatKind::Spreadsheet);
         assert_eq!(classify_ext("zip"), FormatKind::Archive);
+        assert_eq!(classify_ext("tgz"), FormatKind::Archive);
+        assert_eq!(classify_ext("htm"), FormatKind::Document);
         assert_eq!(classify_ext("xyz"), FormatKind::Unknown);
+        assert!(is_supported_output("xlsx"));
+        assert!(!is_supported_output("xls"));
+        assert!(is_supported_output("csv"));
+        assert!(!is_supported_output("svg"));
+        assert!(is_supported_output("m4b"));
+        assert!(is_supported_output("ipynb"));
+        assert!(is_ffmpeg_image("avif"));
+        assert!(is_svg("SVGZ"));
+        assert_eq!(classify_ext("exr"), FormatKind::Unknown);
+        assert_eq!(classify_ext("tga"), FormatKind::Unknown);
+        assert!(!is_supported_output("qoi"));
+        assert!(!is_supported_output("hdr"));
+        assert!(!is_supported_output("dds"));
+        assert!(!is_supported_output("pnm"));
+        assert!(is_supported_output("tiff"));
+        assert!(is_supported_output("webp"));
     }
 
     #[test]
@@ -714,6 +825,7 @@ mod tests {
         assert_eq!(sniff_suffix(b"%PDF-1.4"), ".pdf");
         assert_eq!(sniff_suffix(b"????ftypisom"), ".mp4");
         assert_eq!(sniff_suffix(b"????ftypheic"), ".heic");
+        assert_eq!(sniff_suffix(b"????ftypavif"), ".avif");
         assert_eq!(sniff_suffix(b"xxxx"), "");
     }
 

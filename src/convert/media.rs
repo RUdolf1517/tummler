@@ -2,11 +2,72 @@ use crate::deps;
 use crate::error::TummlerError;
 use crate::geom::{ffmpeg_scale_filter, Geometry};
 use crate::interrupt;
-use crate::util::normalize_ext;
+use crate::util::{get_extension, normalize_ext};
 use std::path::Path;
 use std::process::Command;
 
-/// Audio/video conversion via ffmpeg
+/// Map 1..=100 onto x264/x265 CRF 18..=38 (useful range). 100 → 18, 80 → 22, 50 → 28.
+fn quality_to_crf(q: u8) -> u8 {
+    let q = q.clamp(1, 100);
+    (18.0 + f32::from(100 - q) * 0.2).round() as u8
+}
+
+fn x264_preset(q: u8) -> &'static str {
+    if q >= 80 { "medium" } else { "veryfast" }
+}
+
+fn is_video_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp"
+            | "gif" | "m4v" | "ts" | "mts" | "m2ts" | "ogv" | "vob"
+    )
+}
+
+fn is_audio_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "mp3" | "wav" | "flac" | "aac" | "ogg" | "m4a" | "opus" | "wma" | "aiff" | "aif"
+            | "alac" | "ac3" | "dts" | "amr" | "au" | "ra" | "m4b" | "caf"
+    )
+}
+
+/// Remux (`-c copy`) when only the container changes: no `-q`, no resize, no extra args.
+pub fn can_try_stream_copy(
+    src_ext: &str,
+    dst_ext: &str,
+    quality: Option<u8>,
+    geometry: &Geometry,
+    ffmpeg_args: Option<&str>,
+) -> bool {
+    if quality.is_some() || !geometry.is_noop() || ffmpeg_args.is_some() {
+        return false;
+    }
+    let src = normalize_ext(src_ext);
+    let dst = normalize_ext(dst_ext);
+    if src == dst || src == "gif" || dst == "gif" {
+        return false;
+    }
+    (is_video_ext(&src) || is_audio_ext(&src)) && (is_video_ext(&dst) || is_audio_ext(&dst))
+}
+
+fn ffmpeg_copy(input: &Path, output: &Path) -> bool {
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"]);
+    cmd.arg("-i").arg(input);
+    cmd.args(["-c", "copy"]);
+    cmd.arg(output);
+    let ok = interrupt::run(&mut cmd)
+        .ok()
+        .is_some_and(|r| r.status.success());
+    if !ok {
+        let _ = std::fs::remove_file(output);
+    }
+    ok
+}
+
+/// Audio/video conversion via ffmpeg.
+#[allow(clippy::too_many_arguments)]
 pub fn convert_media(
     input: &Path,
     output: &Path,
@@ -15,24 +76,36 @@ pub fn convert_media(
     no_auto_install: bool,
     assume_yes: bool,
     geometry: &Geometry,
+    ffmpeg_threads: usize,
 ) -> Result<(), TummlerError> {
     deps::ensure_available("ffmpeg", no_auto_install, assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("ffmpeg".into(), e))?;
 
-    let mut cmd = Command::new("ffmpeg");
-    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"]);
-    cmd.arg(input);
-
+    let in_ext = get_extension(input).unwrap_or_default();
     let out_ext = output
         .extension()
         .and_then(|e| e.to_str())
         .map(normalize_ext)
         .unwrap_or_default();
+    if can_try_stream_copy(&in_ext, &out_ext, quality, geometry, ffmpeg_args)
+        && ffmpeg_copy(input, output)
+    {
+        return Ok(());
+    }
 
-    let user_has_vf = ffmpeg_args.is_some_and(|s| {
-        s.split_whitespace()
-            .any(|a| a == "-vf" || a == "-filter:v" || a == "-filter_complex")
-    });
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"]);
+    cmd.arg("-i");
+    cmd.arg(input);
+
+    let user_has = |flag: &str| {
+        ffmpeg_args.is_some_and(|s| s.split_whitespace().any(|a| a == flag))
+    };
+    if ffmpeg_threads > 0 && !user_has("-threads") {
+        cmd.arg("-threads").arg(ffmpeg_threads.to_string());
+    }
+
+    let user_has_vf = user_has("-vf") || user_has("-filter:v") || user_has("-filter_complex");
     let scale = if user_has_vf {
         None
     } else {
@@ -53,21 +126,18 @@ pub fn convert_media(
         }
         if let Some(q) = quality {
             let q = q.clamp(1, 100);
-            let is_video = matches!(
-                out_ext.as_str(),
-                "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg" | "3gp"
-                    | "gif" | "m4v"
-            );
-            if is_video {
-                if out_ext != "gif" {
-                    let crf = ((100 - q) as f32 * 51.0 / 100.0).round() as u8;
-                    cmd.arg("-crf").arg(crf.to_string());
-                    // -preset is libx264/x265 only; webm/vp9 does not have it and ffmpeg fails
-                    if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
-                        cmd.arg("-preset").arg(if q >= 80 { "slow" } else { "medium" });
-                    }
+            if is_video_ext(&out_ext) && out_ext != "gif" {
+                let crf = quality_to_crf(q);
+                cmd.arg("-crf").arg(crf.to_string());
+                if out_ext == "webm" && !user_has("-b:v") {
+                    // VP9 CRF is ignored unless bitrate is unconstrained.
+                    cmd.args(["-b:v", "0"]);
                 }
-            } else {
+                // -preset is libx264/x265 only; webm/vp9 fails on it.
+                if matches!(out_ext.as_str(), "mp4" | "mkv" | "mov" | "m4v") {
+                    cmd.arg("-preset").arg(x264_preset(q));
+                }
+            } else if is_audio_ext(&out_ext) {
                 let bitrate = match q {
                     90..=100 => "320k",
                     80..=89 => "256k",
@@ -77,6 +147,9 @@ pub fn convert_media(
                     _ => "64k",
                 };
                 cmd.arg("-b:a").arg(bitrate);
+            } else {
+                // Image via ffmpeg (lossy webp, heic, avif, …). libwebp: 0–100 higher=better.
+                cmd.arg("-q:v").arg(q.to_string());
             }
         }
     }
@@ -176,5 +249,54 @@ mod shell_words {
         fn rejects_unclosed() {
             assert!(split(r#"-vf "scale"#).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geom::Geometry;
+
+    #[test]
+    fn crf_stays_in_useful_range() {
+        assert_eq!(quality_to_crf(100), 18);
+        assert_eq!(quality_to_crf(90), 20);
+        assert_eq!(quality_to_crf(80), 22);
+        assert_eq!(quality_to_crf(50), 28);
+        assert_eq!(quality_to_crf(1), 38);
+        assert!(quality_to_crf(90) > quality_to_crf(100));
+    }
+
+    #[test]
+    fn preset_never_slow() {
+        assert_eq!(x264_preset(100), "medium");
+        assert_eq!(x264_preset(80), "medium");
+        assert_eq!(x264_preset(79), "veryfast");
+    }
+
+    #[test]
+    fn stream_copy_only_for_container_change() {
+        let g = Geometry::default();
+        assert!(can_try_stream_copy("mkv", "mp4", None, &g, None));
+        assert!(can_try_stream_copy("mp4", "mkv", None, &g, None));
+        assert!(can_try_stream_copy("m4a", "mp4", None, &g, None));
+        assert!(can_try_stream_copy("m4b", "m4a", None, &g, None));
+        assert!(can_try_stream_copy("ogv", "mp4", None, &g, None));
+        assert!(!can_try_stream_copy("mkv", "mp4", Some(80), &g, None));
+        assert!(!can_try_stream_copy("mkv", "gif", None, &g, None));
+        assert!(!can_try_stream_copy("mp4", "mp4", None, &g, None));
+        assert!(!can_try_stream_copy("png", "mp4", None, &g, None));
+        let resized = Geometry {
+            max: Some(1920),
+            resize: None,
+        };
+        assert!(!can_try_stream_copy("mkv", "mp4", None, &resized, None));
+        assert!(!can_try_stream_copy(
+            "mkv",
+            "mp4",
+            None,
+            &g,
+            Some("-an")
+        ));
     }
 }

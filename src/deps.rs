@@ -1,10 +1,36 @@
 use colored::Colorize;
 use std::io::IsTerminal;
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Check whether a binary is on PATH.
 pub fn is_available(bin: &str) -> bool {
     which::which(bin).is_ok()
+}
+
+/// LibreOffice, if the user already installed it. Never auto-installed.
+pub fn soffice_bin() -> Option<PathBuf> {
+    for name in ["soffice", "libreoffice"] {
+        if let Ok(p) = which::which(name) {
+            return Some(p);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let bundled =
+            PathBuf::from("/Applications/LibreOffice.app/Contents/MacOS/soffice");
+        if bundled.is_file() {
+            return Some(bundled);
+        }
+    }
+    None
+}
+
+/// Slide conversions need soffice on PATH. tummler will not install LibreOffice.
+pub fn require_soffice() -> Result<PathBuf, String> {
+    soffice_bin().ok_or_else(|| {
+        "LibreOffice (soffice) not found in PATH. tummler does not install it; slide conversions (pptx/odp/ppt → pdf and between decks) need an existing install.".into()
+    })
 }
 
 /// Human-readable install hints.
@@ -17,15 +43,17 @@ pub fn install_hint(bin: &str) -> String {
             "Fedora:".bold(),
             "Website:".bold()
         ),
-        "ffprobe" => format!(
-            "ffprobe usually ships with ffmpeg:\n  {} brew install ffmpeg\n  {} sudo apt install ffmpeg",
-            "macOS:".bold(),
-            "Debian/Ubuntu:".bold()
-        ),
         "pandoc" => format!(
             "Install pandoc:\n  {}  brew install pandoc\n  {}  sudo apt install pandoc\n  {}  https://pandoc.org/installing.html",
             "macOS:".bold(),
             "Debian/Ubuntu:".bold(),
+            "Website:".bold()
+        ),
+        "pdftoppm" | "pdftotext" => format!(
+            "Install poppler ({bin}):\n  {}  brew install poppler\n  {}  sudo apt install poppler-utils\n  {}  sudo dnf install poppler-utils\n  {}  https://poppler.freedesktop.org/",
+            "macOS:".bold(),
+            "Debian/Ubuntu:".bold(),
+            "Fedora:".bold(),
             "Website:".bold()
         ),
         _ => format!("Install {bin} with your system package manager."),
@@ -101,13 +129,19 @@ fn run_install(bin: &str, cmd: &str) -> bool {
     }
 }
 
-fn detect_install_command(bin: &str) -> Option<String> {
-    let pkg = bin_for_pkg(bin);
+fn pkg_name(bin: &str, brew: bool, pacman: bool) -> &str {
+    match bin {
+        "pdftoppm" | "pdftotext" if brew || pacman => "poppler",
+        "pdftoppm" | "pdftotext" => "poppler-utils",
+        other => other,
+    }
+}
 
+fn detect_install_command(bin: &str) -> Option<String> {
     #[cfg(target_os = "macos")]
     {
         if which::which("brew").is_ok() {
-            return Some(format!("brew install {pkg}"));
+            return Some(format!("brew install {}", pkg_name(bin, true, false)));
         }
         None
     }
@@ -115,34 +149,39 @@ fn detect_install_command(bin: &str) -> Option<String> {
     #[cfg(target_os = "linux")]
     {
         if which::which("brew").is_ok() {
-            return Some(format!("brew install {pkg}"));
+            return Some(format!("brew install {}", pkg_name(bin, true, false)));
         }
         if which::which("apt").is_ok() || which::which("apt-get").is_ok() {
-            return Some(format!("sudo apt update && sudo apt install -y {pkg}"));
+            return Some(format!(
+                "sudo apt update && sudo apt install -y {}",
+                pkg_name(bin, false, false)
+            ));
         }
         if which::which("dnf").is_ok() {
-            return Some(format!("sudo dnf install -y {pkg}"));
+            return Some(format!(
+                "sudo dnf install -y {}",
+                pkg_name(bin, false, false)
+            ));
         }
         if which::which("pacman").is_ok() {
-            return Some(format!("sudo pacman -S --noconfirm {pkg}"));
+            return Some(format!(
+                "sudo pacman -S --noconfirm {}",
+                pkg_name(bin, false, true)
+            ));
         }
         if which::which("zypper").is_ok() {
-            return Some(format!("sudo zypper install -y {pkg}"));
+            return Some(format!(
+                "sudo zypper install -y {}",
+                pkg_name(bin, false, false)
+            ));
         }
         None
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        let _ = pkg;
+        let _ = bin;
         None
-    }
-}
-
-fn bin_for_pkg(bin: &str) -> &str {
-    match bin {
-        "ffprobe" => "ffmpeg",
-        other => other,
     }
 }
 
@@ -174,19 +213,18 @@ pub fn check_all() {
     println!();
 
     let deps = [
-        ("ffmpeg", "Audio/video conversion", true),
-        ("ffprobe", "Media inspection (optional)", false),
-        ("pandoc", "Document conversion", true),
+        ("ffmpeg", "Audio/video conversion"),
+        ("pandoc", "Document conversion"),
+        ("pdftoppm", "PDF → png/jpg (first page)"),
+        ("pdftotext", "PDF → text / docx fallback"),
     ];
 
-    for (bin, desc, required) in deps {
+    for (bin, desc) in deps {
         let available = is_available(bin);
         let status = if available {
             "✓ installed".green()
-        } else if required {
-            "✗ not found".red()
         } else {
-            "○ not found (optional)".yellow()
+            "✗ not found".red()
         };
         println!("  {:12}  {}  — {}", bin.bold(), status, desc);
         if !available {
@@ -197,11 +235,22 @@ pub fn check_all() {
         }
     }
 
+    let lo = soffice_bin().is_some();
+    let lo_status = if lo {
+        "✓ installed".green()
+    } else {
+        "○ not found (optional, never auto-installed)".yellow()
+    };
+    println!(
+        "  {:12}  {lo_status}  — slides; Word/ODT → pdf; PDF → docx if present",
+        "soffice".bold()
+    );
+
     println!();
     println!(
         "  {} {}",
-        "Native (no dependencies):".bold(),
-        "images (image crate), archives (zip/tar)".dimmed()
+        "Native (no extra install):".bold(),
+        "images, archives, spreadsheets (xlsx↔csv)".dimmed()
     );
     println!();
 

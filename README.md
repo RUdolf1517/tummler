@@ -5,13 +5,13 @@
 **טומלער** — *the one who stirs things up*
 
 One CLI that mixes any file into any format.  
-Images · audio · video · documents · archives.
+Images · audio · video · documents · spreadsheets · archives.
 
 [Install](#install) · [Usage](#usage) · [Formats](#formats) · [Name](#the-name)
 
 [![license](https://img.shields.io/badge/license-MIT-0b3d91?style=flat-square)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-111111?style=flat-square)](#install)
-[![rust](https://img.shields.io/badge/rust-1.74%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
+[![rust](https://img.shields.io/badge/rust-1.99%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
 
 </div>
 
@@ -19,10 +19,16 @@ Images · audio · video · documents · archives.
 
 ```bash
 tummler photo.png jpg
+tummler icon.svg png
 tummler photo.heic jpg --max 1920
 tummler ./photos webp -r --skip-newer -o ./out
 tummler video.mp4 gif
 tummler report.docx pdf
+tummler report.pdf png
+tummler report.pdf docx
+tummler table.xlsx csv
+tummler table.csv xlsx
+tummler slides.pptx pdf
 tummler backup.zip tar.gz
 ```
 
@@ -49,14 +55,14 @@ brew install tummler
 
 Intel Mac: `brew install --HEAD tummler` (builds with Rust).
 
-**Cargo** (needs [Rust 1.74+](https://rustup.rs))
+**Cargo** (needs [Rust 1.99+](https://rustup.rs))
 
 ```bash
 # from git:
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
-macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY.
+macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents, poppler for PDF → png/docx — tummler offers to install them in a TTY. Slides use LibreOffice only if `soffice` is already on PATH (never installed).
 
 <details>
 <summary>From source</summary>
@@ -66,7 +72,7 @@ macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc f
 brew install pkg-config xz
 
 # Debian/Ubuntu
-sudo apt install pkg-config liblzma-dev libbz2-dev cmake
+sudo apt install pkg-config liblzma-dev libbz2-dev
 
 git clone https://github.com/RUdolf1517/tummler
 cd tummler
@@ -93,6 +99,7 @@ tummler ./photos avif --overwrite
 tummler ./photos webp -r -o ./out -j 8
 tummler ./photos jpeg -r -n                                          # dry-run
 tummler ./photos webp -r --include '*.png' --exclude '*_raw*' --skip-newer -o ./out
+tummler ./sheets csv -o ./out
 ```
 
 TTY: spinner for one file, progress bar for a batch. `--quiet` and pipes stay silent. Then a size summary.
@@ -102,10 +109,54 @@ TTY: spinner for one file, progress bar for a batch. `--quiet` and pipes stay si
 ```bash
 tummler photo.png jpeg -q 90
 tummler photo.png jpg --max 1920          # longest side, never upscales
-tummler photo.png webp --resize 50%
+tummler photo.png webp --resize 50%       # lossless unless -q
+tummler photo.png webp -q 80              # lossy (ffmpeg)
+tummler photo.png avif -q 70
 tummler photo.png jpg --resize 800x       # width 800, height follows
-tummler video.mp4 webm -q 70              # crf
+tummler video.mkv mp4                     # remux (`-c copy`) if codecs fit
+tummler video.mp4 webm -q 80              # CRF ~22, not x264 “slow”
 tummler video.mp4 mp3 -q 85               # bitrate
+```
+
+### Documents
+
+Word / ODT → PDF goes through **pandoc** (auto-installed). A pandoc PDF needs LaTeX. If `soffice` is already on PATH, tummler uses it instead — better Word layout, never installed.
+
+```bash
+tummler report.docx pdf
+tummler notes.odt pdf
+tummler notes.md html
+tummler report.pdf docx
+tummler report.pdf png
+tummler report.pdf png --max 1920
+```
+
+PDF → png/jpg uses poppler `pdftoppm` (first page). PDF → docx uses **LibreOffice** if `soffice` is already on PATH (`writer_pdf_import`). Otherwise poppler `pdftotext` + pandoc (text only, auto-installed). `pdf → pptx` is not supported.
+
+### Spreadsheets
+
+Excel / ODS → csv or a padded text table. csv / xls / ods → xlsx. First sheet by default. No LibreOffice.
+
+```bash
+tummler table.xlsx csv
+tummler table.csv xlsx
+tummler table.xls xlsx
+tummler table.xlsx txt --sheet Sales
+tummler table.xlsx csv --all-sheets -o ./out
+tummler a.xlsx b.xls csv -o ./out/
+```
+
+### Slides
+
+Decks (`pptx`/`ppsx`/`odp`/`ppt`) go through **LibreOffice only if `soffice` is already on PATH**. tummler never asks to install it and never installs it. `pptx` ↔ `ppsx` is a copy (same OOXML package) and does not need soffice.
+
+Document → deck goes through pandoc (`odt`/`docx`/`md` → `pptx`). `pdf → pptx` is not supported.
+
+```bash
+tummler slides.pptx pdf        # needs soffice already installed
+tummler slides.pptx ppsx       # copy, no soffice
+tummler notes.odt pptx         # pandoc
+tummler deck.odp pptx          # needs soffice already installed
 ```
 
 ### Overwrite
@@ -146,6 +197,8 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --check-deps
       --no-auto-install
   -y, --yes                 install deps without asking
+      --sheet <NAME>        spreadsheet sheet (`*` = all, one file each)
+      --all-sheets          every sheet → `table-Sheet1.csv`
       --ffmpeg-args <ARGS>
       --completions <SHELL> bash | zsh | fish | powershell | elvish
 ```
@@ -160,9 +213,11 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 
 | | | |
 |---|---|---|
-| **Images** | png jpg gif bmp ico tiff webp avif heic pnm tga dds hdr qoi exr | Rust · HEIC via ffmpeg |
-| **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a opus … | ffmpeg |
-| **Documents** | pdf docx odt html md tex rst epub pptx csv json txt rtf | pandoc · LaTeX for PDF |
+| **Images** | png jpg gif bmp ico tiff webp svg→raster avif heic | Rust · resvg · HEIC/AVIF via ffmpeg |
+| **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a m4b ogv vob caf opus … | ffmpeg |
+| **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); pdf → png/jpg (poppler, first page); pdf → docx (soffice if present, else pdftotext+pandoc); md/html/tex/ipynb/… | pandoc · poppler · LaTeX for pandoc PDF · optional LibreOffice |
+| **Spreadsheets** | xlsx/xls/ods → csv txt; csv/xls/ods → xlsx | Rust (calamine · rust_xlsxwriter) |
+| **Slides** | pptx/ppsx/odp/ppt → pdf and between decks if soffice is present; pptx ↔ ppsx copy; odt/docx/md → pptx | optional LibreOffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
 
 ```bash
@@ -181,13 +236,15 @@ tummler --completions fish > ~/.config/fish/completions/tummler.fish
 ## How it works
 
 ```
-tummler ─┬─ images      →  image crate
-         ├─ archives    →  zip / tar / gz / bz2 / xz / zstd
-         ├─ audio/video →  ffmpeg
-         └─ documents   →  pandoc
+tummler ─┬─ images       →  image crate; svg via resvg; avif/heic via ffmpeg
+         ├─ archives     →  zip / tar / gz / bz2 / xz / zstd (zip↔tar streamed)
+         ├─ audio/video  →  ffmpeg
+         ├─ spreadsheets →  calamine + rust_xlsxwriter (no LibreOffice)
+         ├─ slides       →  soffice if already installed; pptx ↔ ppsx is a copy
+         └─ documents    →  pandoc; PDF → png via poppler; PDF → docx via soffice or pdftotext
 ```
 
-Image and archive batches run in parallel (`-j`). ffmpeg/pandoc are checked once, then the pool starts. Writes go through a staging file, then an atomic rename.
+Image and archive batches run in parallel (`-j`). ffmpeg/pandoc/poppler are checked once, then the pool starts. Writes go through a staging file, then an atomic rename.
 
 ## The name
 

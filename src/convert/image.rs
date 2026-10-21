@@ -1,10 +1,61 @@
 use crate::error::TummlerError;
 use crate::geom::Geometry;
-use crate::util::normalize_ext;
+use crate::util::{get_extension, is_svg, normalize_ext};
+use image::ImageDecoder;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
 const BUF: usize = 256 * 1024;
+
+fn map_img(e: impl ToString) -> TummlerError {
+    TummlerError::ImageError(e.to_string())
+}
+
+fn map_io(e: impl ToString) -> TummlerError {
+    TummlerError::IoError(e.to_string())
+}
+
+fn load_image(input: &Path) -> Result<image::DynamicImage, TummlerError> {
+    let reader = image::ImageReader::open(input)
+        .map_err(map_img)?
+        .with_guessed_format()
+        .map_err(map_img)?;
+    let mut decoder = reader.into_decoder().map_err(map_img)?;
+    let orientation = decoder
+        .orientation()
+        .unwrap_or(image::metadata::Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(decoder).map_err(map_img)?;
+    if orientation != image::metadata::Orientation::NoTransforms {
+        img.apply_orientation(orientation);
+    }
+    Ok(img)
+}
+
+fn into_rgb8(img: image::DynamicImage) -> image::RgbImage {
+    match img {
+        image::DynamicImage::ImageRgb8(buf) => buf,
+        other => other.to_rgb8(),
+    }
+}
+
+fn load_svg(input: &Path, geometry: &Geometry) -> Result<image::DynamicImage, TummlerError> {
+    let data = std::fs::read(input).map_err(map_io)?;
+    let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default())
+        .map_err(map_img)?;
+    let size = tree.size();
+    let ow = size.width().max(1.0);
+    let oh = size.height().max(1.0);
+    let (nw, nh) = geometry.target_size(ow.round().max(1.0) as u32, oh.round().max(1.0) as u32);
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(nw, nh).ok_or_else(|| {
+        TummlerError::ImageError("svg raster size is invalid".into())
+    })?;
+    let transform =
+        resvg::tiny_skia::Transform::from_scale(nw as f32 / ow, nh as f32 / oh);
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    let rgba = image::RgbaImage::from_raw(nw, nh, pixmap.data().to_vec())
+        .ok_or_else(|| TummlerError::ImageError("svg raster failed".into()))?;
+    Ok(image::DynamicImage::ImageRgba8(rgba))
+}
 
 /// Image conversion via the `image` crate
 pub fn convert_image(
@@ -19,26 +70,21 @@ pub fn convert_image(
         .map(normalize_ext)
         .unwrap_or_default();
 
-    let reader = image::ImageReader::open(input)
-        .map_err(|e| TummlerError::ImageError(e.to_string()))?
-        .with_guessed_format()
-        .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-    let img = reader
-        .decode()
-        .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-    let img = apply_geometry(img, geometry);
+    let img = if is_svg(&get_extension(input).unwrap_or_default()) {
+        load_svg(input, geometry)?
+    } else {
+        apply_geometry(load_image(input)?, geometry)
+    };
 
     match output_ext.as_str() {
-        "jpg" | "jpeg" => {
+        "jpg" => {
             let q = quality.unwrap_or(90).clamp(1, 100);
-            let file = std::fs::File::create(output)
-                .map_err(|e| TummlerError::IoError(e.to_string()))?;
+            let file = std::fs::File::create(output).map_err(map_io)?;
             let mut writer = BufWriter::with_capacity(BUF, file);
-            let rgb = img.to_rgb8();
+            let rgb = into_rgb8(img);
             let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, q);
-            rgb.write_with_encoder(encoder)
-                .map_err(|e| TummlerError::ImageError(e.to_string()))?;
-            writer.flush().map_err(|e| TummlerError::IoError(e.to_string()))?;
+            rgb.write_with_encoder(encoder).map_err(map_img)?;
+            writer.flush().map_err(map_io)?;
         }
         _ => {
             let fmt = image_format_from_ext(&output_ext).ok_or_else(|| {
@@ -61,7 +107,13 @@ fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::Dynam
     if nw == w && nh == h {
         img
     } else {
-        img.resize(nw, nh, image::imageops::FilterType::Lanczos3)
+        // Triangle is much cheaper on the downscale hot path; Lanczos for upscale.
+        let filter = if (nw as u64) * (nh as u64) < (w as u64) * (h as u64) {
+            image::imageops::FilterType::Triangle
+        } else {
+            image::imageops::FilterType::Lanczos3
+        };
+        img.resize(nw, nh, filter)
     }
 }
 
@@ -71,16 +123,8 @@ fn image_format_from_ext(ext: &str) -> Option<image::ImageFormat> {
         "gif" => image::ImageFormat::Gif,
         "bmp" => image::ImageFormat::Bmp,
         "ico" => image::ImageFormat::Ico,
-        "tiff" | "tif" => image::ImageFormat::Tiff,
+        "tiff" => image::ImageFormat::Tiff,
         "webp" => image::ImageFormat::WebP,
-        "avif" => image::ImageFormat::Avif,
-        "pnm" | "pbm" | "pgm" | "ppm" => image::ImageFormat::Pnm,
-        "tga" => image::ImageFormat::Tga,
-        "hdr" => image::ImageFormat::Hdr,
-        "qoi" => image::ImageFormat::Qoi,
-        "ff" | "farbfeld" => image::ImageFormat::Farbfeld,
-        "dds" => image::ImageFormat::Dds,
-        "exr" | "openexr" => image::ImageFormat::OpenExr,
         _ => return None,
     })
 }
@@ -128,5 +172,21 @@ mod tests {
         let decoded = image::open(&output).unwrap();
         assert_eq!(decoded.width(), 4);
         assert_eq!(decoded.height(), 4);
+    }
+
+    #[test]
+    fn svg_to_png() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.svg");
+        std::fs::write(
+            &input,
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#ff0000"/></svg>"##,
+        )
+        .unwrap();
+        let output = dir.path().join("a.png");
+        convert_image(&input, &output, None, &Geometry::default()).unwrap();
+        let decoded = image::open(&output).unwrap();
+        assert_eq!(decoded.width(), 8);
+        assert_eq!(decoded.height(), 8);
     }
 }
