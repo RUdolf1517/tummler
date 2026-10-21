@@ -100,24 +100,39 @@ fn with_sheet_suffix(path: &Path, sheet_file: &str) -> PathBuf {
     parent.join(format!("{stem}-{sheet_file}.{ext}"))
 }
 
+fn sheet_list_hint(names: &[String]) -> String {
+    names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| format!("{}:{n}", i + 1))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn resolve_sheet_name(names: &[String], want: Option<&str>) -> Result<String, TummlerError> {
     if names.is_empty() {
         return Err(TummlerError::SpreadsheetError("empty workbook".into()));
     }
-    match want {
-        None => Ok(names[0].clone()),
-        Some(want) => names
-            .iter()
-            .find(|n| n.as_str() == want)
-            .or_else(|| names.iter().find(|n| n.eq_ignore_ascii_case(want)))
-            .cloned()
-            .ok_or_else(|| {
-                TummlerError::SpreadsheetError(format!(
-                    "unknown sheet: {want} (available: {})",
-                    names.join(", ")
-                ))
-            }),
+    let Some(want) = want else {
+        return Ok(names[0].clone());
+    };
+    if let Some(found) = names
+        .iter()
+        .find(|n| n.as_str() == want)
+        .or_else(|| names.iter().find(|n| n.eq_ignore_ascii_case(want)))
+    {
+        return Ok(found.clone());
     }
+    if let Ok(n) = want.parse::<usize>()
+        && n >= 1
+        && let Some(found) = names.get(n - 1)
+    {
+        return Ok(found.clone());
+    }
+    Err(TummlerError::SpreadsheetError(format!(
+        "unknown sheet: {want} (available: {})",
+        sheet_list_hint(names)
+    )))
 }
 
 fn format_number(f: f64) -> String {
@@ -639,10 +654,31 @@ mod tests {
         let out = dir.path().join("s.csv");
         convert_spreadsheet(&input, &out, "csv", Some("sales")).unwrap();
         assert_eq!(std::fs::read_to_string(&out).unwrap(), "B\n");
+        convert_spreadsheet(&input, &out, "csv", Some("2")).unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "B\n");
         let err = convert_spreadsheet(&input, &out, "csv", Some("Nope")).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("unknown sheet"), "{msg}");
         assert!(msg.contains("Sales"), "{msg}");
+        let err = convert_spreadsheet(&input, &out, "csv", Some("9")).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown sheet"), "{msg}");
+        assert!(msg.contains("2:Sales"), "{msg}");
+    }
+
+    #[test]
+    fn xlsx_sheet_index_vs_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("table.xlsx");
+        let a = vec![vec!["A"]];
+        let b = vec![vec!["B"]];
+        write_xlsx(&input, &[("2", &a), ("Sales", &b)]);
+        let out = dir.path().join("s.csv");
+        // A sheet actually named "2" wins over 1-based index 2.
+        convert_spreadsheet(&input, &out, "csv", Some("2")).unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "A\n");
+        convert_spreadsheet(&input, &out, "csv", Some("1")).unwrap();
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "A\n");
     }
 
     #[test]
