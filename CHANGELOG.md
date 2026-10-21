@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `tummler --man` (groff). Homebrew installs the man page and bash/zsh/fish completions
+- Docs: Homebrew 6 tap trust (`brew install RUdolf1517/tummler/tummler`; short name needs `brew trust --formula`)
 - CI: `actions/checkout@v5`, artifact actions v6, pin `ubuntu-24.04`
 - Formula: `livecheck`, caveats for ffmpeg/pandoc/poppler, Intel `--HEAD` note
 

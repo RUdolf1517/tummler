@@ -1,7 +1,11 @@
-# brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler
-# brew install tummler
+# Third-party tap (Homebrew 6+ tap trust). Custom remote: this repo is not
+# named homebrew-tummler, so brew tap needs the GitHub URL.
 #
-# Prebuilt binaries from GitHub Releases (no Rust). Intel Mac: brew install --HEAD.
+#   brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler
+#   brew install RUdolf1517/tummler/tummler
+#
+# Short name: brew trust --formula RUdolf1517/tummler/tummler && brew install tummler
+# Intel Mac:  brew install --HEAD RUdolf1517/tummler/tummler
 
 class Tummler < Formula
   desc "One CLI that mixes any file into any format"

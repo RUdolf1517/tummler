@@ -46,14 +46,21 @@ Format last. That’s the whole trick.
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
 ```
 
-**Homebrew** (no Rust)
+**Homebrew** (no Rust). Third-party tap: Homebrew 6+ [tap trust](https://docs.brew.sh/Tap-Trust) — a fully qualified name trusts only this formula.
 
 ```bash
 brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler
+brew install RUdolf1517/tummler/tummler
+```
+
+Short name after that:
+
+```bash
+brew trust --formula RUdolf1517/tummler/tummler
 brew install tummler
 ```
 
-Intel Mac: `brew install --HEAD tummler` (builds with Rust).
+Intel Mac (builds with Rust): `brew install --HEAD RUdolf1517/tummler/tummler`
 
 **Cargo** (needs [Rust 1.99+](https://rustup.rs))
 

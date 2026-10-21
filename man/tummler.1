@@ -25,6 +25,44 @@ separates files whose names start with
 .BR \- .
 .B \-
 means stdin/stdout.
+.SH INSTALL
+Binary from GitHub Releases (no Rust):
+.PP
+.RS
+curl \-fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
+.RE
+.PP
+Homebrew. This is a third\-party tap, not homebrew/core.
+The repository is not named
+.BR homebrew\-tummler ,
+so the tap needs an explicit URL.
+Homebrew 6+ requires
+.B tap trust
+(see
+.I https://docs.brew.sh/Tap-Trust
+).
+A fully qualified formula name trusts only that formula:
+.PP
+.RS
+brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler
+.br
+brew install RUdolf1517/tummler/tummler
+.RE
+.PP
+To install by short name, trust the formula first:
+.PP
+.RS
+brew trust \-\-formula RUdolf1517/tummler/tummler
+.br
+brew install tummler
+.RE
+.PP
+Do not
+.B brew trust RUdolf1517/tummler
+unless you accept every current and future formula in the tap.
+Intel Mac has no bottle:
+.B brew install \-\-HEAD RUdolf1517/tummler/tummler
+(needs Rust).
 .SH OPTIONS
 .TP
 .BI \-f " EXT" "\fR, \fB\-\-format=" EXT
@@ -179,7 +217,8 @@ disables color.
 .BR pandoc (1),
 .BR pdftoppm (1),
 .BR pdftotext (1),
-.BR soffice (1)
+.BR soffice (1),
+.BR brew (1)
 .SH BUGS
 https://github.com/RUdolf1517/tummler/issues
 .SH AUTHOR

@@ -725,6 +725,8 @@ mod tests {
         assert!(man.contains(".TH TUMMLER 1"));
         assert!(man.contains("tummler photo.png jpg"));
         assert!(man.contains("pdftoppm"));
+        assert!(man.contains("brew trust"));
+        assert!(man.contains("RUdolf1517/tummler/tummler"));
     }
 
     #[test]
