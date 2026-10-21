@@ -7,8 +7,8 @@ Do this **after** merging to `main`. Binaries first, then Homebrew hashes.
 ```bash
 git checkout main
 git pull
-git tag v0.3.1
-git push origin v0.3.1
+git tag v0.3.2
+git push origin v0.3.2
 ```
 
 Actions builds Apple Silicon, Intel Mac (`x86_64-apple-darwin`), Linux x86_64, and Linux ARM tarballs and attaches them to the release. After the tag, copy the Intel Mac SHA-256 into `Formula/tummler.rb` (`on_macos` / `on_intel`).

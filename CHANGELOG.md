@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.2 — 2026-10-21
+
 - JPEG `--max` / `--resize`: decode at 1/2, 1/4 or 1/8 (DCT) when that still covers the target, then Triangle to the exact size
 - PDF → png/jpg: raster at the target size (`--resize` too, via `pdfinfo` + `pdftoppm -scale-to`); skip a second PNG encode when already sized
 - PDF → png/jpg: default is **all pages stacked in one image**; `--page N` (1-based) picks one page
