@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.1 — 2026-10-21
+
 - `tummler --man` (groff). Homebrew installs the man page and bash/zsh/fish completions
 - Docs: Homebrew 6 tap trust (`brew install RUdolf1517/tummler/tummler`; short name needs `brew trust --formula`)
 - CI: `actions/checkout@v5`, artifact actions v6, pin `ubuntu-24.04`
