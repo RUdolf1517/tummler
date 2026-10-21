@@ -221,7 +221,7 @@ pub fn check_all() {
     let deps = [
         ("ffmpeg", "Audio/video conversion"),
         ("pandoc", "Document conversion"),
-        ("pdftoppm", "PDF → png/jpg (first page)"),
+        ("pdftoppm", "PDF → png/jpg (pages stacked, or --page N)"),
         ("pdftotext", "PDF → text / docx fallback"),
     ];
 

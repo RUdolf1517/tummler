@@ -18,6 +18,7 @@ Examples:
   tummler table.csv xlsx
   tummler table.xls xlsx
   tummler table.xlsx txt --sheet Sales
+  tummler table.xlsx csv --sheet 2
   tummler table.xlsx csv --all-sheets
   tummler video.mkv mp4
   tummler slides.pptx pdf
@@ -26,6 +27,7 @@ Examples:
   tummler notes.odt pptx
   tummler deck.odp pptx
   tummler report.pdf png
+  tummler report.pdf png --page 2
   tummler report.pdf docx
   tummler -i
 
@@ -100,6 +102,10 @@ pub struct Cli {
     #[arg(long = "resize", value_name = "SPEC")]
     pub resize: Option<String>,
 
+    /// PDF page (1-based). Default: all pages stacked in one image
+    #[arg(long = "page", value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    pub page: Option<u32>,
+
     /// Verbose log on stderr
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
     pub verbose: bool,
@@ -148,8 +154,8 @@ pub struct Cli {
     #[arg(long = "ffmpeg-args", value_name = "ARGS")]
     pub ffmpeg_args: Option<String>,
 
-    /// Spreadsheet sheet (`*` = every sheet, each to its own file)
-    #[arg(long = "sheet", value_name = "NAME")]
+    /// Spreadsheet sheet: name, 1-based index, or `*` (every sheet → its own file)
+    #[arg(long = "sheet", value_name = "NAME|N")]
     pub sheet: Option<String>,
 
     /// Every spreadsheet sheet → its own file (`table-Sheet1.csv`)

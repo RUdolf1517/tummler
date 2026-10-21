@@ -31,6 +31,10 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             archive: tummler-aarch64-apple-darwin.tar.gz
+          # Cross-compile from Apple Silicon; rustc targets x86_64-apple-darwin.
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: tummler-x86_64-apple-darwin.tar.gz
 
     steps:
       - uses: actions/checkout@v5
@@ -48,6 +52,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+
+      - name: macOS deployment target
+        if: runner.os == 'macOS'
+        run: echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> "$GITHUB_ENV"
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}

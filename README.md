@@ -19,16 +19,14 @@ Images · audio · video · documents · spreadsheets · archives.
 
 ```bash
 tummler photo.png jpg
-tummler icon.svg png
 tummler photo.heic jpg --max 1920
 tummler ./photos webp -r --skip-newer -o ./out
 tummler video.mp4 gif
 tummler report.docx pdf
-tummler report.pdf png
-tummler report.pdf docx
-tummler table.xlsx csv
-tummler table.csv xlsx
-tummler slides.pptx pdf
+tummler report.pdf png                  # all pages, one image
+tummler report.pdf png --page 2
+tummler table.xlsx csv --sheet 2
+tummler slides.pptx pdf                 # soffice if already on PATH
 tummler backup.zip tar.gz
 ```
 
@@ -40,36 +38,37 @@ Format last. That’s the whole trick.
 
 ## Install
 
-**No Rust** — binary from GitHub Releases into `~/.local/bin`:
+**Binary** (no Rust) into `~/.local/bin`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
 ```
 
-**Homebrew** (no Rust). Third-party tap: Homebrew 6+ [tap trust](https://docs.brew.sh/Tap-Trust) — a fully qualified name trusts only this formula.
+**Homebrew** (no Rust). Third-party tap — Homebrew 6+ [tap trust](https://docs.brew.sh/Tap-Trust). A fully qualified name trusts only this formula:
 
 ```bash
 brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler
 brew install RUdolf1517/tummler/tummler
 ```
 
-Short name after that:
+After that, short name:
 
 ```bash
 brew trust --formula RUdolf1517/tummler/tummler
 brew install tummler
 ```
 
-Intel Mac (builds with Rust): `brew install --HEAD RUdolf1517/tummler/tummler`
+Intel Mac: GitHub Releases include `x86_64-apple-darwin` (so `install.sh` works). Homebrew bottle is added after that tag’s SHA-256 is in the Formula; until then `brew install --HEAD RUdolf1517/tummler/tummler` (needs Rust).
 
-**Cargo** (needs [Rust 1.99+](https://rustup.rs))
+**Cargo** ([Rust 1.99+](https://rustup.rs)):
 
 ```bash
-# from git:
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
-macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents, poppler for PDF → png/docx — tummler offers to install them in a TTY. Slides use LibreOffice only if `soffice` is already on PATH (never installed).
+macOS (Apple Silicon) and Linux, x86_64 and ARM.
+
+ffmpeg (video/HEIC), pandoc (documents), poppler (PDF → png/docx) — tummler offers to install them in a TTY. LibreOffice (`soffice`) is used only if already on PATH. Never asked for, never installed.
 
 <details>
 <summary>From source</summary>
@@ -104,41 +103,44 @@ cat in.png | tummler - jpeg > out.jpeg     # unix filter
 tummler a.png b.jpg c.bmp webp -o ./converted/
 tummler ./photos avif --overwrite
 tummler ./photos webp -r -o ./out -j 8
-tummler ./photos jpeg -r -n                                          # dry-run
+tummler ./photos jpeg -r -n                # dry-run
 tummler ./photos webp -r --include '*.png' --exclude '*_raw*' --skip-newer -o ./out
-tummler ./sheets csv -o ./out
 ```
 
 TTY: spinner for one file, progress bar for a batch. `--quiet` and pipes stay silent. Then a size summary.
 
-### Quality & size
+### Images & video
 
 ```bash
 tummler photo.png jpeg -q 90
-tummler photo.png jpg --max 1920          # longest side, never upscales
-tummler photo.png webp --resize 50%       # lossless unless -q
-tummler photo.png webp -q 80              # lossy (ffmpeg)
+tummler photo.png jpg --max 1920           # longest side, never upscales
+tummler photo.png jpg --resize 800x        # width 800, height follows
+tummler photo.png webp --resize 50%        # lossless unless -q
+tummler photo.png webp -q 80               # lossy (ffmpeg)
 tummler photo.png avif -q 70
-tummler photo.png jpg --resize 800x       # width 800, height follows
-tummler video.mkv mp4                     # remux (`-c copy`) if codecs fit
-tummler video.mp4 webm -q 80              # CRF ~22, not x264 “slow”
-tummler video.mp4 mp3 -q 85               # bitrate
+tummler icon.svg png
+tummler video.mkv mp4                      # remux (`-c copy`) if codecs fit
+tummler video.mp4 webm -q 80               # CRF ~22, not x264 “slow”
+tummler video.mp4 mp3 -q 85                # bitrate
 ```
 
-### Documents
+JPEG `--max` / `--resize` decodes at 1/2, 1/4 or 1/8 (DCT) when that still covers the target.
 
-Word / ODT → PDF goes through **pandoc** (auto-installed). A pandoc PDF needs LaTeX. If `soffice` is already on PATH, tummler uses it instead — better Word layout, never installed.
+### Documents & PDF
+
+Word / ODT → PDF: **pandoc** (auto-installed; a pandoc PDF needs LaTeX). If `soffice` is already on PATH, that is used instead — better Word layout, never installed.
 
 ```bash
 tummler report.docx pdf
 tummler notes.odt pdf
 tummler notes.md html
 tummler report.pdf docx
-tummler report.pdf png
+tummler report.pdf png                     # every page, stacked in one PNG
+tummler report.pdf png --page 2            # one page (1-based)
 tummler report.pdf png --max 1920
 ```
 
-PDF → png/jpg uses poppler `pdftoppm` (first page). PDF → docx uses **LibreOffice** if `soffice` is already on PATH (`writer_pdf_import`). Otherwise poppler `pdftotext` + pandoc (text only, auto-installed). `pdf → pptx` is not supported.
+PDF → png/jpg: poppler `pdftoppm`, raster at `--max` / `--resize`. PDF → docx: LibreOffice if `soffice` is on PATH (`writer_pdf_import`); otherwise `pdftotext` + pandoc (text only). `pdf → pptx` is not supported.
 
 ### Spreadsheets
 
@@ -148,16 +150,19 @@ Excel / ODS → csv or a padded text table. csv / xls / ods → xlsx. First shee
 tummler table.xlsx csv
 tummler table.csv xlsx
 tummler table.xls xlsx
-tummler table.xlsx txt --sheet Sales
+tummler table.xlsx txt --sheet Sales       # by name
+tummler table.xlsx csv --sheet 2           # 1-based index
 tummler table.xlsx csv --all-sheets -o ./out
 tummler a.xlsx b.xls csv -o ./out/
 ```
 
+A sheet actually named `2` wins over index 2.
+
 ### Slides
 
-Decks (`pptx`/`ppsx`/`odp`/`ppt`) go through **LibreOffice only if `soffice` is already on PATH**. tummler never asks to install it and never installs it. `pptx` ↔ `ppsx` is a copy (same OOXML package) and does not need soffice.
+Decks (`pptx` / `ppsx` / `odp` / `ppt`) go through **LibreOffice only if `soffice` is already on PATH**. tummler never asks to install it. `pptx` ↔ `ppsx` is a copy (same OOXML package).
 
-Document → deck goes through pandoc (`odt`/`docx`/`md` → `pptx`). `pdf → pptx` is not supported.
+Document → deck is pandoc (`odt` / `docx` / `md` → `pptx`). `pdf → pptx` is not supported.
 
 ```bash
 tummler slides.pptx pdf        # needs soffice already installed
@@ -169,13 +174,13 @@ tummler deck.odp pptx          # needs soffice already installed
 ### Overwrite
 
 ```bash
-tummler img.png jpeg                      # error if img.jpeg exists
+tummler img.png jpeg                       # error if img.jpeg exists
 tummler img.png jpeg --overwrite
-tummler ./photos webp -r --skip-newer     # folders: skip what’s already done
+tummler ./photos webp -r --skip-newer      # folders: skip what’s already done
 ```
 
 <details>
-<summary>Full flag list</summary>
+<summary>Flags</summary>
 
 ```
 tummler [OPTIONS] <INPUT>... [FORMAT]
@@ -193,6 +198,9 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --skip-newer          skip if output is up to date
       --max <PX>            longest side (images/video)
       --resize <SPEC>       50% | 800x | x600 | 800x600
+      --page <N>            PDF page (1-based; default: all pages in one image)
+      --sheet <NAME|N>      spreadsheet sheet (name, 1-based index, or *)
+      --all-sheets          every sheet → table-Sheet1.csv
   -j, --jobs <N>            parallel jobs (0 = CPUs)
   -v, --verbose             log on stderr
       --quiet               errors only
@@ -204,14 +212,12 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --check-deps
       --no-auto-install
   -y, --yes                 install deps without asking
-      --sheet <NAME>        spreadsheet sheet (`*` = all, one file each)
-      --all-sheets          every sheet → `table-Sheet1.csv`
       --ffmpeg-args <ARGS>
       --completions <SHELL> bash | zsh | fish | powershell | elvish
-      --man                     groff man page to stdout
+      --man                 groff man page to stdout
 ```
 
-Exit: `0` ok · `1` conversion failed · `2` bad args · `130` Ctrl-C (kills ffmpeg).
+Exit: `0` ok · `1` conversion failed · `2` bad args · `130` Ctrl-C (kills ffmpeg/pandoc/pdftoppm).
 
 stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style errors: `tummler: file not found: foo.png`.
 
@@ -219,19 +225,21 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 
 ## Formats
 
-| | | |
+| | Converts | Engine |
 |---|---|---|
-| **Images** | png jpg gif bmp ico tiff webp svg→raster avif heic | Rust · resvg · HEIC/AVIF via ffmpeg |
-| **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a m4b ogv vob caf opus … | ffmpeg |
-| **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); pdf → png/jpg (poppler, first page); pdf → docx (soffice if present, else pdftotext+pandoc); md/html/tex/ipynb/… | pandoc · poppler · LaTeX for pandoc PDF · optional LibreOffice |
-| **Spreadsheets** | xlsx/xls/ods → csv txt; csv/xls/ods → xlsx | Rust (calamine · rust_xlsxwriter) |
-| **Slides** | pptx/ppsx/odp/ppt → pdf and between decks if soffice is present; pptx ↔ ppsx copy; odt/docx/md → pptx | optional LibreOffice · pandoc |
+| **Images** | png jpg gif bmp ico tiff webp · svg→raster · avif/heic | Rust · resvg · ffmpeg |
+| **Audio / video** | mp4 mkv mov webm gif · mp3 wav flac aac ogg m4a opus … | ffmpeg |
+| **Documents** | doc/docx/odt/rtf → pdf · md/html/tex/ipynb/… · pdf → png/jpg (`--page N`) · pdf → docx | pandoc · poppler · optional soffice |
+| **Spreadsheets** | xlsx/xls/ods → csv txt · csv/xls/ods → xlsx | calamine · rust_xlsxwriter |
+| **Slides** | pptx/ppsx/odp/ppt → pdf and between decks · pptx ↔ ppsx copy · odt/docx/md → pptx | optional soffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
 
 ```bash
 tummler --list-formats
 tummler --check-deps
 ```
+
+A pandoc PDF needs LaTeX. `pdf → pptx` is not supported.
 
 ## Completions
 

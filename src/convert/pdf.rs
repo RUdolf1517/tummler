@@ -1,5 +1,6 @@
 use crate::deps;
 use crate::error::TummlerError;
+use crate::geom::Geometry;
 use crate::interrupt;
 use crate::util::{classify_ext, is_ffmpeg_image, is_pdf, normalize_ext, FormatKind};
 use std::path::{Path, PathBuf};
@@ -19,7 +20,7 @@ fn soffice_writer_target(ext: &str) -> bool {
     matches!(ext, "docx" | "odt" | "rtf")
 }
 
-/// PDF → png/jpg/… (first page) and PDF → docx/txt/… .
+/// PDF → png/jpg/… (all pages stacked, or `--page N`) and PDF → docx/txt/… .
 pub fn convert_pdf(
     input: &Path,
     output: &Path,
@@ -55,47 +56,189 @@ fn pdf_to_image(
     opts: &ConvertOpts<'_>,
 ) -> Result<(), TummlerError> {
     let tmp = tempfile::tempdir().map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let raster = raster_first_page(input, tmp.path(), opts)?;
-    if target == "png" && opts.geometry.is_noop() {
-        std::fs::copy(&raster, output).map_err(|e| {
+    let (pngs, already_sized) = raster_pages(input, tmp.path(), opts)?;
+    if pngs.is_empty() {
+        return Err(TummlerError::PdfError("pdftoppm produced no PNG".into()));
+    }
+    let noop = Geometry::default();
+    if pngs.len() == 1 {
+        let geometry = if already_sized {
+            &noop
+        } else {
+            opts.geometry
+        };
+        return emit_raster(&pngs[0], output, target, opts, geometry);
+    }
+
+    let mut pages = Vec::with_capacity(pngs.len());
+    for p in &pngs {
+        let img = ::image::open(p).map_err(|e| TummlerError::ImageError(e.to_string()))?;
+        pages.push(if already_sized {
+            img
+        } else {
+            image::apply_geometry(img, opts.geometry)
+        });
+    }
+    let stacked = stack_pages(pages)?;
+    let stacked_path = tmp.path().join("stacked.png");
+    stacked
+        .save(&stacked_path)
+        .map_err(|e| TummlerError::ImageError(e.to_string()))?;
+    emit_raster(&stacked_path, output, target, opts, &noop)
+}
+
+fn emit_raster(
+    raster: &Path,
+    output: &Path,
+    target: &str,
+    opts: &ConvertOpts<'_>,
+    geometry: &Geometry,
+) -> Result<(), TummlerError> {
+    if target == "png" && geometry.is_noop() {
+        std::fs::copy(raster, output).map_err(|e| {
             TummlerError::IoError(format!("failed to write {}: {e}", output.display()))
         })?;
         return Ok(());
     }
     if is_ffmpeg_image(target) || (target == "webp" && opts.quality.is_some()) {
         return media::convert_media(
-            &raster,
+            raster,
             output,
             opts.quality,
             opts.ffmpeg_args,
             opts.no_auto_install,
             opts.assume_yes,
-            opts.geometry,
+            geometry,
             opts.ffmpeg_threads,
         );
     }
-    image::convert_image(&raster, output, opts.quality, opts.geometry)
+    image::convert_image(raster, output, opts.quality, geometry)
 }
 
-fn raster_first_page(
+fn stack_pages(
+    mut pages: Vec<::image::DynamicImage>,
+) -> Result<::image::DynamicImage, TummlerError> {
+    if pages.len() <= 1 {
+        return pages
+            .pop()
+            .ok_or_else(|| TummlerError::PdfError("no PDF pages to stack".into()));
+    }
+    let w = pages.iter().map(|p| p.width()).max().unwrap_or(1).max(1);
+    let mut h: u32 = 0;
+    for p in &pages {
+        h = h
+            .checked_add(p.height())
+            .ok_or_else(|| TummlerError::PdfError("stacked PNG is too tall".into()))?;
+    }
+    let h = h.max(1);
+    let mut canvas = ::image::RgbImage::from_pixel(w, h, ::image::Rgb([255, 255, 255]));
+    let mut y = 0u32;
+    for p in pages {
+        let rgb = match p {
+            ::image::DynamicImage::ImageRgb8(buf) => buf,
+            other => other.to_rgb8(),
+        };
+        ::image::imageops::replace(&mut canvas, &rgb, 0, y as i64);
+        y += rgb.height();
+    }
+    Ok(::image::DynamicImage::ImageRgb8(canvas))
+}
+
+/// 150 dpi pixels for a PDF page in points (poppler's default raster).
+fn pts_to_px(pts: f32) -> u32 {
+    (pts * 150.0 / 72.0).round().max(1.0) as u32
+}
+
+fn parse_pdfinfo_page_pts(text: &str) -> Option<(f32, f32)> {
+    let mut size = None;
+    let mut rot = 0i32;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("Page size:") {
+            let mut parts = rest.split_whitespace();
+            let w: f32 = parts.next()?.parse().ok()?;
+            if parts.next()? != "x" {
+                return None;
+            }
+            let h: f32 = parts.next()?.parse().ok()?;
+            size = Some((w, h));
+        } else if let Some(rest) = line.strip_prefix("Page rot:") {
+            rot = rest.trim().parse().unwrap_or(0);
+        }
+    }
+    let (w, h) = size?;
+    if rot.rem_euclid(180) == 90 {
+        Some((h, w))
+    } else {
+        Some((w, h))
+    }
+}
+
+fn parse_pdfinfo_pages(text: &str) -> Option<u32> {
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("Pages:") {
+            return rest.trim().parse().ok();
+        }
+    }
+    None
+}
+
+fn pdfinfo_text(input: &Path) -> Option<String> {
+    let out = Command::new("pdfinfo").arg(input).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// pdftoppm size flags + whether the PNG is already at `geometry.target_size`.
+fn pdftoppm_fit(geometry: &Geometry, page_pts: Option<(f32, f32)>) -> (Vec<String>, bool) {
+    if let Some((pw, ph)) = page_pts {
+        let w = pts_to_px(pw);
+        let h = pts_to_px(ph);
+        let (tw, th) = geometry.target_size(w, h);
+        if tw == w && th == h {
+            return (vec!["-r".into(), "150".into()], true);
+        }
+        return (
+            vec!["-scale-to".into(), tw.max(th).to_string()],
+            true,
+        );
+    }
+    match (geometry.resize.is_none(), geometry.max) {
+        (true, None) => (vec!["-r".into(), "150".into()], true),
+        (true, Some(max)) => (vec!["-scale-to".into(), max.to_string()], true),
+        _ => (vec!["-r".into(), "150".into()], false),
+    }
+}
+
+fn raster_pages(
     input: &Path,
     tmp: &Path,
     opts: &ConvertOpts<'_>,
-) -> Result<PathBuf, TummlerError> {
+) -> Result<(Vec<PathBuf>, bool), TummlerError> {
     deps::ensure_available("pdftoppm", opts.no_auto_install, opts.assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("pdftoppm".into(), e))?;
 
+    let info = pdfinfo_text(input);
+    let info = info.as_deref();
+    if let Some(want) = opts.page
+        && let Some(n) = info.and_then(parse_pdfinfo_pages)
+        && want > n
+    {
+        return Err(TummlerError::PdfError(format!(
+            "PDF has {n} pages, --page {want}"
+        )));
+    }
+
+    let (scale, already_sized) = pdftoppm_fit(opts.geometry, info.and_then(parse_pdfinfo_page_pts));
     let prefix = tmp.join("page");
     let mut cmd = Command::new("pdftoppm");
-    cmd.args(["-png", "-f", "1", "-l", "1"]);
-    // --max: raster at the target long side instead of 150dpi-then-downscale.
-    match (opts.geometry.resize.is_none(), opts.geometry.max) {
-        (true, Some(max)) => {
-            cmd.arg("-scale-to").arg(max.to_string());
-        }
-        _ => {
-            cmd.args(["-r", "150"]);
-        }
+    cmd.arg("-png");
+    if let Some(n) = opts.page {
+        cmd.arg("-f").arg(n.to_string()).arg("-l").arg(n.to_string());
+    }
+    for a in &scale {
+        cmd.arg(a);
     }
     cmd.arg(input).arg(&prefix);
 
@@ -110,17 +253,21 @@ fn raster_first_page(
         )));
     }
 
-    if let Some(png) = first_png(tmp) {
-        return Ok(png);
+    let pngs = pngs_in(tmp);
+    if pngs.is_empty() {
+        return Err(TummlerError::PdfError(match opts.page {
+            Some(n) => format!("pdftoppm produced no PNG for page {n}"),
+            None => "pdftoppm produced no PNG".into(),
+        }));
     }
-    Err(TummlerError::PdfError(
-        "pdftoppm produced no PNG for page 1".into(),
-    ))
+    Ok((pngs, already_sized))
 }
 
-fn first_png(dir: &Path) -> Option<PathBuf> {
+fn pngs_in(dir: &Path) -> Vec<PathBuf> {
     let mut pngs: Vec<PathBuf> = std::fs::read_dir(dir)
-        .ok()?
+        .ok()
+        .into_iter()
+        .flatten()
         .flatten()
         .map(|e| e.path())
         .filter(|p| {
@@ -130,7 +277,7 @@ fn first_png(dir: &Path) -> Option<PathBuf> {
         })
         .collect();
     pngs.sort();
-    pngs.into_iter().next()
+    pngs
 }
 
 fn pdf_to_document(
@@ -209,6 +356,59 @@ fn pandoc_plain(
     Ok(())
 }
 
+/// Multi-page Helvetica PDF (Kids + xref built, not hardcoded offsets).
+#[cfg(test)]
+fn sample_pdf_pages(texts: &[&str]) -> Vec<u8> {
+    let n = texts.len();
+    assert!(n >= 1);
+    let font_id = 3 + 2 * n;
+    let mut objs: Vec<Vec<u8>> = Vec::with_capacity(1 + 1 + 2 * n + 1);
+    objs.push(b"<< /Type /Catalog /Pages 2 0 R >>".to_vec());
+    let kids: String = (0..n)
+        .map(|i| format!("{} 0 R", 3 + i))
+        .collect::<Vec<_>>()
+        .join(" ");
+    objs.push(format!("<< /Type /Pages /Kids [{kids}] /Count {n} >>").into_bytes());
+    for i in 0..n {
+        let content_id = 3 + n + i;
+        objs.push(
+            format!(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {content_id} 0 R /Resources << /Font << /F1 {font_id} 0 R >> >> >>"
+            )
+            .into_bytes(),
+        );
+    }
+    for text in texts {
+        let stream = format!("BT /F1 24 Tf 72 720 Td ({text}) Tj ET");
+        objs.push(
+            format!("<< /Length {} >>\nstream\n{}\nendstream", stream.len(), stream).into_bytes(),
+        );
+    }
+    objs.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec());
+
+    let mut body = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n".to_vec();
+    let mut offsets = Vec::with_capacity(objs.len() + 1);
+    offsets.push(0u32);
+    for (i, payload) in objs.iter().enumerate() {
+        offsets.push(body.len() as u32);
+        body.extend(format!("{} 0 obj\n", i + 1).into_bytes());
+        body.extend(payload);
+        body.extend(b"\nendobj\n");
+    }
+    let xref_at = body.len();
+    let nobj = objs.len() + 1;
+    body.extend(format!("xref\n0 {nobj}\n").into_bytes());
+    body.extend(b"0000000000 65535 f \n");
+    for off in offsets.iter().skip(1) {
+        body.extend(format!("{off:010} 00000 n \n").into_bytes());
+    }
+    body.extend(
+        format!("trailer\n<< /Size {nobj} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n")
+            .into_bytes(),
+    );
+    body
+}
+
 /// One-page Helvetica PDF. Offsets are precomputed (poppler is picky).
 #[cfg(test)]
 pub(crate) fn sample_pdf(_text: &str) -> Vec<u8> {
@@ -218,7 +418,6 @@ pub(crate) fn sample_pdf(_text: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom::Geometry;
 
     fn opts<'a>(geometry: &'a Geometry, overwrite: bool) -> ConvertOpts<'a> {
         ConvertOpts {
@@ -231,6 +430,14 @@ mod tests {
             geometry,
             sheet: None,
             ffmpeg_threads: 0,
+            page: None,
+        }
+    }
+
+    fn opts_page<'a>(geometry: &'a Geometry, page: Option<u32>) -> ConvertOpts<'a> {
+        ConvertOpts {
+            page,
+            ..opts(geometry, true)
         }
     }
 
@@ -295,6 +502,53 @@ mod tests {
     }
 
     #[test]
+    fn pdfinfo_page_pts() {
+        let letter = "Pages:          1\nPage size:      612 x 792 pts (letter)\nPage rot:       0\n";
+        assert_eq!(parse_pdfinfo_page_pts(letter), Some((612.0, 792.0)));
+        let a4 = "Page size:      595.28 x 841.89 pts (A4)\nPage rot:       90\n";
+        let (w, h) = parse_pdfinfo_page_pts(a4).unwrap();
+        assert!((w - 841.89).abs() < 0.01);
+        assert!((h - 595.28).abs() < 0.01);
+        assert!(parse_pdfinfo_page_pts("Pages: 1\n").is_none());
+    }
+
+    #[test]
+    fn pdftoppm_fit_max_and_resize() {
+        let letter = Some((612.0, 792.0));
+        let (args, sized) = pdftoppm_fit(&Geometry::default(), letter);
+        assert_eq!(args, ["-r", "150"]);
+        assert!(sized);
+
+        let g = Geometry {
+            max: Some(200),
+            resize: None,
+        };
+        let (args, sized) = pdftoppm_fit(&g, letter);
+        assert_eq!(args[0], "-scale-to");
+        let long: u32 = args[1].parse().unwrap();
+        assert_eq!(long, 200);
+        assert!(sized);
+
+        let g = Geometry {
+            max: None,
+            resize: Some(crate::geom::ResizeSpec::Width(400)),
+        };
+        let (args, sized) = pdftoppm_fit(&g, letter);
+        assert_eq!(args[0], "-scale-to");
+        let long: u32 = args[1].parse().unwrap();
+        assert!(long >= 400);
+        assert!(sized);
+
+        let g = Geometry {
+            max: Some(1920),
+            resize: None,
+        };
+        let (args, sized) = pdftoppm_fit(&g, None);
+        assert_eq!(args, ["-scale-to", "1920"]);
+        assert!(sized);
+    }
+
+    #[test]
     fn pdf_to_png_respects_max() {
         if !deps::is_available("pdftoppm") {
             return;
@@ -312,6 +566,100 @@ mod tests {
         assert!(decoded.width() <= 200);
         assert!(decoded.height() <= 200);
         assert!(decoded.width() >= 50);
+    }
+
+    #[test]
+    fn pdf_to_png_respects_resize_width() {
+        if !deps::is_available("pdftoppm") {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let input = write_sample(dir.path());
+        let out = dir.path().join("hello.png");
+        let g = Geometry {
+            max: None,
+            resize: Some(crate::geom::ResizeSpec::Width(400)),
+        };
+        convert_pdf(&input, &out, "png", &opts(&g, true))
+            .unwrap_or_else(|e| panic!("pdf→png --resize: {e}"));
+        let decoded = ::image::open(&out).unwrap();
+        // pdftoppm -scale-to long-side can be ±1–2px off the exact width.
+        let w = decoded.width();
+        assert!(
+            (390..=410).contains(&w),
+            "expected width ~400, got {w}×{}",
+            decoded.height()
+        );
+        assert!(decoded.height() >= 400);
+    }
+
+    #[test]
+    fn stack_pages_doubles_height() {
+        let a = ::image::DynamicImage::ImageRgb8(::image::RgbImage::from_pixel(
+            4,
+            3,
+            ::image::Rgb([255, 0, 0]),
+        ));
+        let b = ::image::DynamicImage::ImageRgb8(::image::RgbImage::from_pixel(
+            4,
+            5,
+            ::image::Rgb([0, 255, 0]),
+        ));
+        let s = stack_pages(vec![a, b]).unwrap();
+        assert_eq!(s.width(), 4);
+        assert_eq!(s.height(), 8);
+    }
+
+    #[test]
+    fn pdfinfo_pages() {
+        assert_eq!(parse_pdfinfo_pages("Pages:          2\n"), Some(2));
+        assert_eq!(parse_pdfinfo_pages("Page size: 1 x 1 pts\n"), None);
+    }
+
+    #[test]
+    fn pdf_to_png_stacks_all_pages() {
+        if !deps::is_available("pdftoppm") {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("two.pdf");
+        std::fs::write(&input, sample_pdf_pages(&["One", "Two"])).unwrap();
+        let stacked = dir.path().join("all.png");
+        let one = dir.path().join("p1.png");
+        let g = Geometry::default();
+        convert_pdf(&input, &stacked, "png", &opts(&g, true))
+            .unwrap_or_else(|e| panic!("pdf→png all pages: {e}"));
+        convert_pdf(&input, &one, "png", &opts_page(&g, Some(1)))
+            .unwrap_or_else(|e| panic!("pdf→png --page 1: {e}"));
+        let all = ::image::open(&stacked).unwrap();
+        let p1 = ::image::open(&one).unwrap();
+        assert_eq!(all.width(), p1.width());
+        assert!(
+            all.height() >= p1.height() * 2 - 2,
+            "stacked {}×{} vs page1 {}×{}",
+            all.width(),
+            all.height(),
+            p1.width(),
+            p1.height()
+        );
+    }
+
+    #[test]
+    fn pdf_to_png_page_out_of_range() {
+        if !deps::is_available("pdftoppm") {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let input = write_sample(dir.path());
+        let out = dir.path().join("nope.png");
+        let g = Geometry::default();
+        let err = convert_pdf(&input, &out, "png", &opts_page(&g, Some(9))).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("page") || msg.contains("pages"),
+            "unexpected error: {msg}"
+        );
+        assert!(!out.exists());
     }
 
     #[test]

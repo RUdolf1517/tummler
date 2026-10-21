@@ -5,7 +5,8 @@
 #   brew install RUdolf1517/tummler/tummler
 #
 # Short name: brew trust --formula RUdolf1517/tummler/tummler && brew install tummler
-# Intel Mac:  brew install --HEAD RUdolf1517/tummler/tummler
+# Intel Mac bottle: tummler-x86_64-apple-darwin.tar.gz (url/sha256 after the next tag).
+# Until then: brew install --HEAD RUdolf1517/tummler/tummler
 
 class Tummler < Formula
   desc "One CLI that mixes any file into any format"
@@ -23,6 +24,7 @@ class Tummler < Formula
       url "https://github.com/RUdolf1517/tummler/releases/download/v0.3.1/tummler-aarch64-apple-darwin.tar.gz"
       sha256 "6a8bc2079b7cf50726ec4bdfc7c4bace26ab8e3dac0c6e02b44b927585006d4a"
     end
+    # on_intel: add url/sha256 for tummler-x86_64-apple-darwin.tar.gz after the next tag
   end
 
   on_linux do
@@ -71,7 +73,8 @@ class Tummler < Formula
     if OS.mac? && Hardware::CPU.intel?
       s += <<~EOS
 
-        No Intel Mac bottle. Use: brew install --HEAD RUdolf1517/tummler/tummler
+        No Intel Mac bottle in 0.3.1. Next release ships x86_64-apple-darwin.
+        Until the Formula has that sha256: brew install --HEAD RUdolf1517/tummler/tummler
       EOS
     end
     s

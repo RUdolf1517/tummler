@@ -2,7 +2,7 @@ use crate::error::TummlerError;
 use crate::geom::Geometry;
 use crate::util::{get_extension, is_svg, normalize_ext};
 use image::ImageDecoder;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Cursor, Write};
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -16,6 +16,30 @@ fn map_io(e: impl ToString) -> TummlerError {
     TummlerError::IoError(e.to_string())
 }
 
+fn is_jpeg_input(path: &Path) -> bool {
+    get_extension(path)
+        .map(|e| normalize_ext(&e))
+        .is_some_and(|e| e == "jpg")
+}
+
+fn orientation_swaps_axes(o: image::metadata::Orientation) -> bool {
+    use image::metadata::Orientation::*;
+    matches!(
+        o,
+        Rotate90 | Rotate270 | Rotate90FlipH | Rotate270FlipH
+    )
+}
+
+fn apply_orientation(
+    mut img: image::DynamicImage,
+    orientation: image::metadata::Orientation,
+) -> image::DynamicImage {
+    if orientation != image::metadata::Orientation::NoTransforms {
+        img.apply_orientation(orientation);
+    }
+    img
+}
+
 fn load_image(input: &Path) -> Result<image::DynamicImage, TummlerError> {
     let reader = image::ImageReader::open(input)
         .map_err(map_img)?
@@ -25,11 +49,73 @@ fn load_image(input: &Path) -> Result<image::DynamicImage, TummlerError> {
     let orientation = decoder
         .orientation()
         .unwrap_or(image::metadata::Orientation::NoTransforms);
-    let mut img = image::DynamicImage::from_decoder(decoder).map_err(map_img)?;
-    if orientation != image::metadata::Orientation::NoTransforms {
-        img.apply_orientation(orientation);
+    let img = image::DynamicImage::from_decoder(decoder).map_err(map_img)?;
+    Ok(apply_orientation(img, orientation))
+}
+
+/// JPEG IDCT 1/2, 1/4, 1/8 when the target is at least 2× smaller on both coded axes.
+/// `None` = fall back to a full decode (scale would not shrink, or unsupported JPEG).
+fn load_jpeg_scaled(
+    input: &Path,
+    geometry: &Geometry,
+) -> Result<Option<image::DynamicImage>, TummlerError> {
+    let bytes = std::fs::read(input).map_err(map_io)?;
+    let (orientation, cw, ch) = {
+        let mut header = image::codecs::jpeg::JpegDecoder::new(Cursor::new(bytes.as_slice()))
+            .map_err(map_img)?;
+        let orientation = header
+            .orientation()
+            .unwrap_or(image::metadata::Orientation::NoTransforms);
+        let (cw, ch) = header.dimensions();
+        (orientation, cw, ch)
+    };
+
+    let swap = orientation_swaps_axes(orientation);
+    let (ow, oh) = if swap { (ch, cw) } else { (cw, ch) };
+    let (tw, th) = geometry.target_size(ow, oh);
+    let (req_w, req_h) = if swap { (th, tw) } else { (tw, th) };
+    // jpeg-decoder's reduced IDCT is 1/2, 1/4, 1/8. Skip unless both axes shrink ≥2×
+    // so we never decode smaller than the (oriented) target on either axis.
+    if req_w > cw / 2 || req_h > ch / 2 || req_w > u16::MAX as u32 || req_h > u16::MAX as u32 {
+        return Ok(None);
     }
-    Ok(img)
+
+    let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(bytes.as_slice()));
+    let (sw, sh) = decoder
+        .scale(req_w as u16, req_h as u16)
+        .map_err(map_img)?;
+    if u32::from(sw) >= cw && u32::from(sh) >= ch {
+        return Ok(None);
+    }
+    let pixels = decoder.decode().map_err(map_img)?;
+    let info = decoder
+        .info()
+        .ok_or_else(|| TummlerError::ImageError("jpeg decode".into()))?;
+    let img = jpeg_pixels_to_image(info, pixels)?;
+    // DCT output is ≥ target; finish to exact pixels. Do not run apply_geometry
+    // afterwards — --resize 50% is already baked into (tw, th).
+    Ok(Some(resize_to(apply_orientation(img, orientation), tw, th)))
+}
+
+fn jpeg_pixels_to_image(
+    info: jpeg_decoder::ImageInfo,
+    pixels: Vec<u8>,
+) -> Result<image::DynamicImage, TummlerError> {
+    let w = u32::from(info.width);
+    let h = u32::from(info.height);
+    match info.pixel_format {
+        jpeg_decoder::PixelFormat::RGB24 => {
+            let buf = image::RgbImage::from_raw(w, h, pixels)
+                .ok_or_else(|| TummlerError::ImageError("jpeg rgb size".into()))?;
+            Ok(image::DynamicImage::ImageRgb8(buf))
+        }
+        jpeg_decoder::PixelFormat::L8 => {
+            let buf = image::GrayImage::from_raw(w, h, pixels)
+                .ok_or_else(|| TummlerError::ImageError("jpeg gray size".into()))?;
+            Ok(image::DynamicImage::ImageLuma8(buf))
+        }
+        _ => Err(TummlerError::ImageError("jpeg scaled format".into())),
+    }
 }
 
 fn into_rgb8(img: image::DynamicImage) -> image::RgbImage {
@@ -78,7 +164,14 @@ pub fn convert_image(
     let img = if is_svg(&get_extension(input).unwrap_or_default()) {
         load_svg(input, geometry)?
     } else {
-        apply_geometry(load_image(input)?, geometry)
+        if !geometry.is_noop() && is_jpeg_input(input) {
+            match load_jpeg_scaled(input, geometry) {
+                Ok(Some(img)) => img,
+                _ => apply_geometry(load_image(input)?, geometry),
+            }
+        } else {
+            apply_geometry(load_image(input)?, geometry)
+        }
     };
 
     match output_ext.as_str() {
@@ -105,12 +198,8 @@ pub fn convert_image(
     Ok(())
 }
 
-fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::DynamicImage {
-    if geometry.is_noop() {
-        return img;
-    }
+fn resize_to(img: image::DynamicImage, nw: u32, nh: u32) -> image::DynamicImage {
     let (w, h) = (img.width(), img.height());
-    let (nw, nh) = geometry.target_size(w, h);
     if nw == w && nh == h {
         img
     } else {
@@ -122,6 +211,14 @@ fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::Dynam
         };
         img.resize(nw, nh, filter)
     }
+}
+
+pub(crate) fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::DynamicImage {
+    if geometry.is_noop() {
+        return img;
+    }
+    let (nw, nh) = geometry.target_size(img.width(), img.height());
+    resize_to(img, nw, nh)
 }
 
 fn image_format_from_ext(ext: &str) -> Option<image::ImageFormat> {
@@ -179,6 +276,70 @@ mod tests {
         let decoded = image::open(&output).unwrap();
         assert_eq!(decoded.width(), 4);
         assert_eq!(decoded.height(), 4);
+    }
+
+    #[test]
+    fn jpeg_scaled_decode_shrinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.jpg");
+        image::RgbImage::new(64, 48).save(&input).unwrap();
+        let g = Geometry {
+            max: Some(16),
+            resize: None,
+        };
+        let img = load_jpeg_scaled(&input, &g)
+            .unwrap()
+            .expect("DCT scale should apply at 64×48 → 16");
+        assert!(img.width() <= 32 && img.height() <= 24);
+        assert!(img.width() >= 8 && img.height() >= 6);
+    }
+
+    #[test]
+    fn jpeg_max_downscale() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.jpg");
+        let output = dir.path().join("a.png");
+        image::RgbImage::new(64, 48).save(&input).unwrap();
+        let g = Geometry {
+            max: Some(16),
+            resize: None,
+        };
+        convert_image(&input, &output, None, &g).unwrap();
+        let decoded = image::open(&output).unwrap();
+        assert_eq!(decoded.width(), 16);
+        assert_eq!(decoded.height(), 12);
+    }
+
+    #[test]
+    fn jpeg_max_no_upscale() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.jpg");
+        let output = dir.path().join("a.png");
+        image::RgbImage::new(8, 8).save(&input).unwrap();
+        let g = Geometry {
+            max: Some(1920),
+            resize: None,
+        };
+        convert_image(&input, &output, None, &g).unwrap();
+        let decoded = image::open(&output).unwrap();
+        assert_eq!(decoded.width(), 8);
+        assert_eq!(decoded.height(), 8);
+    }
+
+    #[test]
+    fn jpeg_resize_percent() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.jpg");
+        let output = dir.path().join("a.png");
+        image::RgbImage::new(64, 32).save(&input).unwrap();
+        let g = Geometry {
+            max: None,
+            resize: Some(crate::geom::ResizeSpec::Percent(50.0)),
+        };
+        convert_image(&input, &output, None, &g).unwrap();
+        let decoded = image::open(&output).unwrap();
+        assert_eq!(decoded.width(), 32);
+        assert_eq!(decoded.height(), 16);
     }
 
     #[test]
