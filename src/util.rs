@@ -358,9 +358,7 @@ pub fn classify_ext(ext: &str) -> FormatKind {
     let ext = normalize_ext(ext);
     match ext.as_str() {
         "png" | "jpg" | "gif" | "bmp" | "ico" | "tiff"
-        | "webp" | "avif" | "pnm" | "pbm" | "pgm" | "ppm" | "tga" | "dds"
-        | "hdr" | "farbfeld" | "ff" | "qoi" | "exr" | "openexr"
-        | "heic" | "heif" | "svg" | "svgz" => FormatKind::Image,
+        | "webp" | "avif" | "heic" | "heif" | "svg" | "svgz" => FormatKind::Image,
 
         "mp4" | "avi" | "mkv" | "mov" | "webm" | "flv" | "wmv" | "mpg" | "mpeg"
         | "3gp" | "m4v" | "ts" | "mts" | "m2ts" | "mxf" | "asf" | "rm" | "rmvb"
@@ -575,7 +573,7 @@ pub fn print_supported_formats() {
     );
     println!(
         "     {}",
-        "png, jpg/jpeg, gif, bmp, ico, tiff, webp, svg→raster (resvg), avif/heic (ffmpeg), pnm, tga, dds, hdr, farbfeld, qoi, exr"
+        "png, jpg/jpeg, gif, bmp, ico, tiff, webp, svg→raster (resvg), avif/heic (ffmpeg)"
             .cyan()
     );
     println!();
@@ -711,6 +709,14 @@ mod tests {
         assert!(is_supported_output("ipynb"));
         assert!(is_ffmpeg_image("avif"));
         assert!(is_svg("SVGZ"));
+        assert_eq!(classify_ext("exr"), FormatKind::Unknown);
+        assert_eq!(classify_ext("tga"), FormatKind::Unknown);
+        assert!(!is_supported_output("qoi"));
+        assert!(!is_supported_output("hdr"));
+        assert!(!is_supported_output("dds"));
+        assert!(!is_supported_output("pnm"));
+        assert!(is_supported_output("tiff"));
+        assert!(is_supported_output("webp"));
     }
 
     #[test]

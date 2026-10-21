@@ -125,13 +125,6 @@ fn image_format_from_ext(ext: &str) -> Option<image::ImageFormat> {
         "ico" => image::ImageFormat::Ico,
         "tiff" => image::ImageFormat::Tiff,
         "webp" => image::ImageFormat::WebP,
-        "pnm" | "pbm" | "pgm" | "ppm" => image::ImageFormat::Pnm,
-        "tga" => image::ImageFormat::Tga,
-        "hdr" => image::ImageFormat::Hdr,
-        "qoi" => image::ImageFormat::Qoi,
-        "ff" | "farbfeld" => image::ImageFormat::Farbfeld,
-        "dds" => image::ImageFormat::Dds,
-        "exr" | "openexr" => image::ImageFormat::OpenExr,
         _ => return None,
     })
 }

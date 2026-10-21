@@ -184,12 +184,18 @@ fn pandoc_plain(
     output: &Path,
     opts: &ConvertOpts<'_>,
 ) -> Result<(), TummlerError> {
-    // Same binary as document conversion; keep the ensure in one place.
     deps::ensure_available("pandoc", opts.no_auto_install, opts.assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("pandoc".into(), e))?;
 
+    let to = output
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(normalize_ext)
+        .unwrap_or_else(|| "docx".into());
     let mut cmd = Command::new("pandoc");
-    cmd.args(["-f", "plain"]).arg(input_txt).arg("-o").arg(output);
+    cmd.args(["-f", "plain", "-t", &to, "-o"])
+        .arg(output)
+        .arg(input_txt);
     let result = interrupt::run(&mut cmd)
         .map_err(|e| TummlerError::DocumentError(e.to_string()))?;
     if !result.status.success() {
@@ -326,11 +332,35 @@ mod tests {
         );
     }
 
+    fn pandoc_writes_docx() -> bool {
+        if !deps::is_available("pandoc") {
+            return false;
+        }
+        let dir = match tempfile::tempdir() {
+            Ok(d) => d,
+            Err(_) => return false,
+        };
+        let txt = dir.path().join("a.txt");
+        let out = dir.path().join("a.docx");
+        if std::fs::write(&txt, "hi").is_err() {
+            return false;
+        }
+        Command::new("pandoc")
+            .args(["-f", "plain", "-t", "docx", "-o"])
+            .arg(&out)
+            .arg(&txt)
+            .status()
+            .map(|s| s.success() && out.is_file())
+            .unwrap_or(false)
+    }
+
     #[test]
     fn pdf_to_docx_via_text_or_soffice() {
         let has_soffice = deps::soffice_bin().is_some();
-        let has_text = deps::is_available("pdftotext") && deps::is_available("pandoc");
-        if !has_soffice && !has_text {
+        if !has_soffice && !pandoc_writes_docx() {
+            return;
+        }
+        if !has_soffice && !deps::is_available("pdftotext") {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

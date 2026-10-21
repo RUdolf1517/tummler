@@ -6,6 +6,7 @@
 - PDF → docx via soffice `writer_pdf_import` if already on PATH; otherwise `pdftotext` + pandoc (text only)
 - PDF → txt via `pdftotext`. `pdf → pptx` stays unsupported. LibreOffice is still never auto-installed
 - `dialoguer` without editor/password features (Confirm only)
+- Drop native pnm/tga/dds/hdr/farbfeld/qoi/exr (image crate). png/jpg/gif/bmp/ico/tiff/webp stay; HEIC/AVIF still ffmpeg
 
 ## 0.2.0 — 2026-10-21
 

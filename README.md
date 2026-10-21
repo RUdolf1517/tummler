@@ -213,7 +213,7 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 
 | | | |
 |---|---|---|
-| **Images** | png jpg gif bmp ico tiff webp svg→raster avif heic pnm tga dds hdr qoi exr | Rust · resvg · HEIC/AVIF via ffmpeg |
+| **Images** | png jpg gif bmp ico tiff webp svg→raster avif heic | Rust · resvg · HEIC/AVIF via ffmpeg |
 | **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a m4b ogv vob caf opus … | ffmpeg |
 | **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); pdf → png/jpg (poppler, first page); pdf → docx (soffice if present, else pdftotext+pandoc); md/html/tex/ipynb/… | pandoc · poppler · LaTeX for pandoc PDF · optional LibreOffice |
 | **Spreadsheets** | xlsx/xls/ods → csv txt; csv/xls/ods → xlsx | Rust (calamine · rust_xlsxwriter) |
