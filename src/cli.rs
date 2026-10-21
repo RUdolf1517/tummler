@@ -25,6 +25,8 @@ Examples:
   tummler notes.odt pdf
   tummler notes.odt pptx
   tummler deck.odp pptx
+  tummler report.pdf png
+  tummler report.pdf docx
   tummler -i
 
 Exit codes:

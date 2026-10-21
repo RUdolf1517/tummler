@@ -20,6 +20,9 @@ pub enum TummlerError {
     #[error("document conversion failed (pandoc): {0}")]
     DocumentError(String),
 
+    #[error("PDF conversion failed: {0}")]
+    PdfError(String),
+
     #[error("spreadsheet conversion failed: {0}")]
     SpreadsheetError(String),
 

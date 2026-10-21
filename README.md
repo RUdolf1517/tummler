@@ -24,6 +24,8 @@ tummler photo.heic jpg --max 1920
 tummler ./photos webp -r --skip-newer -o ./out
 tummler video.mp4 gif
 tummler report.docx pdf
+tummler report.pdf png
+tummler report.pdf docx
 tummler table.xlsx csv
 tummler table.csv xlsx
 tummler slides.pptx pdf
@@ -60,7 +62,7 @@ Intel Mac: `brew install --HEAD tummler` (builds with Rust).
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
-macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents — tummler offers to install them in a TTY. Slides use LibreOffice only if `soffice` is already on PATH (never installed).
+macOS (Apple Silicon) and Linux, x86_64 and ARM. ffmpeg for video/HEIC, pandoc for documents, poppler for PDF → png/docx — tummler offers to install them in a TTY. Slides use LibreOffice only if `soffice` is already on PATH (never installed).
 
 <details>
 <summary>From source</summary>
@@ -124,7 +126,12 @@ Word / ODT → PDF goes through **pandoc** (auto-installed). A pandoc PDF needs 
 tummler report.docx pdf
 tummler notes.odt pdf
 tummler notes.md html
+tummler report.pdf docx
+tummler report.pdf png
+tummler report.pdf png --max 1920
 ```
+
+PDF → png/jpg uses poppler `pdftoppm` (first page). PDF → docx uses **LibreOffice** if `soffice` is already on PATH (`writer_pdf_import`). Otherwise poppler `pdftotext` + pandoc (text only, auto-installed). `pdf → pptx` is not supported.
 
 ### Spreadsheets
 
@@ -208,7 +215,7 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 |---|---|---|
 | **Images** | png jpg gif bmp ico tiff webp svg→raster avif heic pnm tga dds hdr qoi exr | Rust · resvg · HEIC/AVIF via ffmpeg |
 | **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a m4b ogv vob caf opus … | ffmpeg |
-| **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); md/html/tex/ipynb/… | pandoc · LaTeX for pandoc PDF · optional LibreOffice |
+| **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); pdf → png/jpg (poppler, first page); pdf → docx (soffice if present, else pdftotext+pandoc); md/html/tex/ipynb/… | pandoc · poppler · LaTeX for pandoc PDF · optional LibreOffice |
 | **Spreadsheets** | xlsx/xls/ods → csv txt; csv/xls/ods → xlsx | Rust (calamine · rust_xlsxwriter) |
 | **Slides** | pptx/ppsx/odp/ppt → pdf and between decks if soffice is present; pptx ↔ ppsx copy; odt/docx/md → pptx | optional LibreOffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
@@ -234,10 +241,10 @@ tummler ─┬─ images       →  image crate; svg via resvg; avif/heic via ff
          ├─ audio/video  →  ffmpeg
          ├─ spreadsheets →  calamine + rust_xlsxwriter (no LibreOffice)
          ├─ slides       →  soffice if already installed; pptx ↔ ppsx is a copy
-         └─ documents    →  pandoc; Word/ODT → pdf via soffice if already installed
+         └─ documents    →  pandoc; PDF → png via poppler; PDF → docx via soffice or pdftotext
 ```
 
-Image and archive batches run in parallel (`-j`). ffmpeg/pandoc are checked once, then the pool starts. Writes go through a staging file, then an atomic rename.
+Image and archive batches run in parallel (`-j`). ffmpeg/pandoc/poppler are checked once, then the pool starts. Writes go through a staging file, then an atomic rename.
 
 ## The name
 

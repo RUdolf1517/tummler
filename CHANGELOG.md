@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- PDF → png/jpg/webp/… via poppler `pdftoppm` (first page; `--max`/`--resize` apply)
+- PDF → docx via soffice `writer_pdf_import` if already on PATH; otherwise `pdftotext` + pandoc (text only)
+- PDF → txt via `pdftotext`. `pdf → pptx` stays unsupported. LibreOffice is still never auto-installed
+
 ## 0.2.0 — 2026-10-21
 
 - `zip` 9.0 / `calamine` 0.37 (after the zip 8.x yank; unifies with rust_xlsxwriter 0.100)

@@ -2,6 +2,7 @@ pub mod archive;
 pub mod document;
 pub mod image;
 pub mod media;
+pub mod pdf;
 pub mod soffice;
 pub mod spreadsheet;
 
@@ -9,8 +10,8 @@ use crate::deps;
 use crate::error::TummlerError;
 use crate::geom::Geometry;
 use crate::util::{
-    classify_ext, get_extension, is_ffmpeg_image, is_stdio, is_svg, normalize_ext, staging_path,
-    FormatKind,
+    classify_ext, get_extension, is_ffmpeg_image, is_pdf, is_stdio, is_svg, normalize_ext,
+    staging_path, FormatKind,
 };
 use colored::Colorize;
 use std::path::Path;
@@ -46,6 +47,11 @@ pub fn prefetch_deps(
     let need_pandoc = target_kind == FormatKind::Document
         && inputs.iter().any(|p| {
             let ext = get_extension(p).unwrap_or_default();
+            if is_pdf(&ext) {
+                return pdf::is_pdf_doc_target(&target)
+                    && target != "txt"
+                    && !(soffice_present && soffice::prefers_soffice(&ext, target_ext));
+            }
             matches!(
                 classify_ext(&ext),
                 FormatKind::Document | FormatKind::Unknown
@@ -56,14 +62,27 @@ pub fn prefetch_deps(
     let need_soffice = inputs
         .iter()
         .any(|p| soffice::needs_soffice(&get_extension(p).unwrap_or_default(), target_ext));
+    let need_pdftoppm = target_kind == FormatKind::Image
+        && inputs
+            .iter()
+            .any(|p| is_pdf(&get_extension(p).unwrap_or_default()));
+    let need_pdftotext = pdf::is_pdf_doc_target(&target)
+        && inputs.iter().any(|p| {
+            let ext = get_extension(p).unwrap_or_default();
+            is_pdf(&ext) && !(soffice_present && soffice::prefers_soffice(&ext, target_ext))
+        });
 
     if target_kind == FormatKind::Image {
         need_ffmpeg = need_ffmpeg
             || inputs.iter().any(|p| {
+                let ext = get_extension(p).unwrap_or_default();
+                if is_pdf(&ext) {
+                    return is_ffmpeg_image(target_ext) || lossy_webp;
+                }
                 is_stdio(p)
-                    || is_ffmpeg_image(&get_extension(p).unwrap_or_default())
+                    || is_ffmpeg_image(&ext)
                     || matches!(
-                        classify_ext(&get_extension(p).unwrap_or_default()),
+                        classify_ext(&ext),
                         FormatKind::Media | FormatKind::Document
                     )
             });
@@ -76,6 +95,14 @@ pub fn prefetch_deps(
     if need_pandoc {
         deps::ensure_available("pandoc", no_auto, assume_yes)
             .map_err(|e| TummlerError::DependencyMissing("pandoc".into(), e))?;
+    }
+    if need_pdftoppm {
+        deps::ensure_available("pdftoppm", no_auto, assume_yes)
+            .map_err(|e| TummlerError::DependencyMissing("pdftoppm".into(), e))?;
+    }
+    if need_pdftotext {
+        deps::ensure_available("pdftotext", no_auto, assume_yes)
+            .map_err(|e| TummlerError::DependencyMissing("pdftotext".into(), e))?;
     }
     if need_soffice {
         deps::require_soffice()
@@ -150,15 +177,12 @@ pub fn convert_file(
 
     let result = if soffice::is_ooxml_copy(&source_ext, &target_ext) {
         soffice::copy_ooxml_deck(input, &staging)
+    } else if is_pdf(&source_ext) {
+        pdf::convert_pdf(input, &staging, &target_ext, opts)
     } else if soffice::needs_soffice(&source_ext, &target_ext)
         || (soffice::prefers_soffice(&source_ext, &target_ext) && deps::soffice_bin().is_some())
     {
         soffice::convert_office(input, &staging, &target_ext)
-    } else if normalize_ext(&source_ext) == "pdf" && target_ext == "pptx" {
-        Err(TummlerError::UnsupportedConversion(
-            source_ext,
-            target_ext.clone(),
-        ))
     } else if spreadsheet::can_write_xlsx(&source_ext) && spreadsheet::is_xlsx_ext(&target_ext) {
         spreadsheet::convert_to_xlsx(input, &staging, opts.sheet)
     } else if source_kind == FormatKind::Spreadsheet {

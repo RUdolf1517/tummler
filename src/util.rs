@@ -406,6 +406,10 @@ pub fn is_svg(ext: &str) -> bool {
     matches!(normalize_ext(ext).as_str(), "svg" | "svgz")
 }
 
+pub fn is_pdf(ext: &str) -> bool {
+    normalize_ext(ext) == "pdf"
+}
+
 /// Images ffmpeg must handle (no rav1e / no libheif in-process).
 pub fn is_ffmpeg_image(ext: &str) -> bool {
     is_heif(ext) || normalize_ext(ext) == "avif"
@@ -596,6 +600,10 @@ pub fn print_supported_formats() {
         "     {}",
         "pdf, docx, doc, odt, html, md, tex, rst, epub, csv, json, txt, rtf, ipynb".cyan()
     );
+    println!(
+        "     {}",
+        "pdf → png/jpg (poppler, first page);  pdf → docx (soffice if present, else pdftotext+pandoc)".cyan()
+    );
     println!();
 
     println!(
@@ -632,6 +640,8 @@ pub fn print_supported_formats() {
     println!("  {}  {}", "tummler icon.svg png".dimmed(), "→ icon.png".dimmed());
     println!("  {}  {}", "tummler video.mp4 webm -q 80".dimmed(), "→ video.webm".dimmed());
     println!("  {}  {}", "tummler doc.docx pdf".dimmed(), "→ doc.pdf".dimmed());
+    println!("  {}  {}", "tummler report.pdf png".dimmed(), "→ report.png".dimmed());
+    println!("  {}  {}", "tummler report.pdf docx".dimmed(), "→ report.docx".dimmed());
     println!("  {}  {}", "tummler table.xlsx csv".dimmed(), "→ table.csv".dimmed());
     println!("  {}  {}", "tummler table.csv xlsx".dimmed(), "→ table.xlsx".dimmed());
     println!("  {}  {}", "tummler slides.pptx pdf".dimmed(), "→ slides.pdf".dimmed());
@@ -677,6 +687,9 @@ mod tests {
         assert_eq!(classify_ext("ogv"), FormatKind::Media);
         assert_eq!(classify_ext("caf"), FormatKind::Media);
         assert_eq!(classify_ext("pdf"), FormatKind::Document);
+        assert!(is_pdf("pdf"));
+        assert!(is_pdf(".PDF"));
+        assert!(!is_pdf("png"));
         assert_eq!(classify_ext("ipynb"), FormatKind::Document);
         assert_eq!(classify_ext("docx"), FormatKind::Document);
         assert_eq!(classify_ext("doc"), FormatKind::Document);

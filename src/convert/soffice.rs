@@ -46,17 +46,36 @@ pub fn needs_soffice(src: &str, dst: &str) -> bool {
     is_impress(&src) && (is_impress(&dst) || dst == "pdf")
 }
 
-/// Writer → pdf: soffice if already on PATH (better layout), else pandoc.
+/// Writer → pdf, or PDF → docx/odt/rtf: soffice if already on PATH.
 pub fn prefers_soffice(src: &str, dst: &str) -> bool {
     let src = normalize_ext(src);
     let dst = normalize_ext(dst);
-    is_writer(&src) && dst == "pdf"
+    (is_writer(&src) && dst == "pdf")
+        || (src == "pdf" && matches!(dst.as_str(), "docx" | "odt" | "rtf"))
 }
 
 pub fn convert_office(
     input: &Path,
     output: &Path,
     target_ext: &str,
+) -> Result<(), TummlerError> {
+    convert_office_filter(input, output, target_ext, None)
+}
+
+/// PDF → Writer via `--infilter=writer_pdf_import` (layout). Never auto-installs soffice.
+pub fn convert_pdf_import(
+    input: &Path,
+    output: &Path,
+    target_ext: &str,
+) -> Result<(), TummlerError> {
+    convert_office_filter(input, output, target_ext, Some("writer_pdf_import"))
+}
+
+fn convert_office_filter(
+    input: &Path,
+    output: &Path,
+    target_ext: &str,
+    infilter: Option<&str>,
 ) -> Result<(), TummlerError> {
     let dst = normalize_ext(target_ext);
     let Some(filter) = lo_filter(&dst) else {
@@ -81,10 +100,13 @@ pub fn convert_office(
         "--nolockcheck",
         "--nofirststartwizard",
     ])
-    .arg(format!("-env:UserInstallation={}", file_url(&profile)))
-    .args(["--convert-to", filter, "--outdir"])
-    .arg(&outdir)
-    .arg(input);
+    .arg(format!("-env:UserInstallation={}", file_url(&profile)));
+    if let Some(f) = infilter {
+        cmd.arg(format!("--infilter={f}"));
+    }
+    cmd.args(["--convert-to", filter, "--outdir"])
+        .arg(&outdir)
+        .arg(input);
 
     let result = interrupt::run(&mut cmd)
         .map_err(|e| TummlerError::Other(format!("LibreOffice failed to start: {e}")))?;
@@ -112,6 +134,9 @@ fn lo_filter(ext: &str) -> Option<&'static str> {
         "pps" => Some("pps"),
         "odp" => Some("odp"),
         "pdf" => Some("pdf"),
+        "docx" => Some("docx"),
+        "odt" => Some("odt"),
+        "rtf" => Some("rtf"),
         _ => None,
     }
 }
@@ -175,11 +200,17 @@ mod tests {
         assert!(!needs_soffice("docx", "odt"));
         assert!(!needs_soffice("md", "pdf"));
         assert!(!needs_soffice("pdf", "pptx"));
+        assert!(!needs_soffice("pdf", "docx"));
         assert!(!needs_soffice("pptx", "pptx"));
         assert!(prefers_soffice("docx", "pdf"));
         assert!(prefers_soffice("odt", "pdf"));
         assert!(prefers_soffice("doc", "pdf"));
         assert!(prefers_soffice("rtf", "pdf"));
+        assert!(prefers_soffice("pdf", "docx"));
+        assert!(prefers_soffice("pdf", "odt"));
+        assert!(prefers_soffice("pdf", "rtf"));
+        assert!(!prefers_soffice("pdf", "pptx"));
+        assert!(!prefers_soffice("pdf", "png"));
         assert!(!prefers_soffice("odt", "pptx"));
         assert!(!prefers_soffice("md", "pdf"));
     }
