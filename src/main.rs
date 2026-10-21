@@ -327,6 +327,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         verbose,
         geometry: &geometry,
         ffmpeg_threads,
+        page: cli.page,
     };
 
     let run_one = |t: &Task| {
@@ -456,6 +457,7 @@ struct JobSpec<'a> {
     verbose: bool,
     geometry: &'a Geometry,
     ffmpeg_threads: usize,
+    page: Option<u32>,
 }
 
 fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
@@ -474,6 +476,7 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
         geometry: spec.geometry,
         sheet: t.sheet.as_deref(),
         ffmpeg_threads: spec.ffmpeg_threads,
+        page: spec.page,
     };
     match convert::convert_file(&t.input, &t.output, spec.target_ext, &opts) {
         Ok(()) => TaskResult::Ok {
@@ -612,6 +615,7 @@ fn run_stdio(
         geometry,
         sheet: sheet.as_deref().filter(|s| *s != "*"),
         ffmpeg_threads: 0,
+        page: cli.page,
     };
 
     match convert::convert_file(&input_path, &output, target_ext, &opts) {

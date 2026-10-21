@@ -213,7 +213,7 @@ fn resize_to(img: image::DynamicImage, nw: u32, nh: u32) -> image::DynamicImage 
     }
 }
 
-fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::DynamicImage {
+pub(crate) fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::DynamicImage {
     if geometry.is_noop() {
         return img;
     }
@@ -278,7 +278,6 @@ mod tests {
         assert_eq!(decoded.height(), 4);
     }
 
-    #[test]
     #[test]
     fn jpeg_scaled_decode_shrinks() {
         let dir = tempfile::tempdir().unwrap();

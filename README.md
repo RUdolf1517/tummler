@@ -135,10 +135,11 @@ tummler notes.odt pdf
 tummler notes.md html
 tummler report.pdf docx
 tummler report.pdf png
+tummler report.pdf png --page 2
 tummler report.pdf png --max 1920
 ```
 
-PDF → png/jpg uses poppler `pdftoppm` (first page; `--max` / `--resize` raster at the target size). PDF → docx uses **LibreOffice** if `soffice` is already on PATH (`writer_pdf_import`). Otherwise poppler `pdftotext` + pandoc (text only, auto-installed). `pdf → pptx` is not supported.
+PDF → png/jpg uses poppler `pdftoppm` (all pages stacked in one image; `--page N` for one page; `--max` / `--resize` raster at the target size). PDF → docx uses **LibreOffice** if `soffice` is already on PATH (`writer_pdf_import`). Otherwise poppler `pdftotext` + pandoc (text only, auto-installed). `pdf → pptx` is not supported.
 
 ### Spreadsheets
 
@@ -193,6 +194,7 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --skip-newer          skip if output is up to date
       --max <PX>            longest side (images/video)
       --resize <SPEC>       50% | 800x | x600 | 800x600
+      --page <N>            PDF page (1-based; default: all pages in one image)
   -j, --jobs <N>            parallel jobs (0 = CPUs)
   -v, --verbose             log on stderr
       --quiet               errors only
@@ -223,7 +225,7 @@ stdout is data. stderr is chatter. `NO_COLOR` / `TERM=dumb` respected. GNU-style
 |---|---|---|
 | **Images** | png jpg gif bmp ico tiff webp svg→raster avif heic | Rust · resvg · HEIC/AVIF via ffmpeg |
 | **Audio / video** | mp4 avi mkv mov webm gif mp3 wav flac aac ogg m4a m4b ogv vob caf opus … | ffmpeg |
-| **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); pdf → png/jpg (poppler, first page); pdf → docx (soffice if present, else pdftotext+pandoc); md/html/tex/ipynb/… | pandoc · poppler · LaTeX for pandoc PDF · optional LibreOffice |
+| **Documents** | doc/docx/odt/rtf → pdf via pandoc (soffice if already present); pdf → png/jpg (poppler, all pages in one image, `--page N`); pdf → docx (soffice if present, else pdftotext+pandoc); md/html/tex/ipynb/… | pandoc · poppler · LaTeX for pandoc PDF · optional LibreOffice |
 | **Spreadsheets** | xlsx/xls/ods → csv txt; csv/xls/ods → xlsx | Rust (calamine · rust_xlsxwriter) |
 | **Slides** | pptx/ppsx/odp/ppt → pdf and between decks if soffice is present; pptx ↔ ppsx copy; odt/docx/md → pptx | optional LibreOffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |

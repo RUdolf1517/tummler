@@ -27,6 +27,8 @@ pub struct ConvertOpts<'a> {
     pub sheet: Option<&'a str>,
     /// ffmpeg `-threads`. 0 = let ffmpeg decide (single job).
     pub ffmpeg_threads: usize,
+    /// PDF page (1-based). `None` = all pages stacked into one image.
+    pub page: Option<u32>,
 }
 
 /// Check external dependencies once before a parallel batch.

@@ -26,6 +26,7 @@ Examples:
   tummler notes.odt pptx
   tummler deck.odp pptx
   tummler report.pdf png
+  tummler report.pdf png --page 2
   tummler report.pdf docx
   tummler -i
 
@@ -99,6 +100,10 @@ pub struct Cli {
     /// Resize: 50%, 800x, x600, 800x600 (images/video; keep aspect)
     #[arg(long = "resize", value_name = "SPEC")]
     pub resize: Option<String>,
+
+    /// PDF page (1-based). Default: all pages stacked in one image
+    #[arg(long = "page", value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    pub page: Option<u32>,
 
     /// Verbose log on stderr
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
