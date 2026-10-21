@@ -180,25 +180,22 @@ fn trim_table(rows: &mut Vec<Vec<String>>) {
     }
 }
 
-fn csv_escape(s: &str) -> String {
-    let must_quote = s.contains(',')
-        || s.contains('"')
-        || s.contains('\n')
-        || s.contains('\r')
+fn write_csv_cell(f: &mut impl Write, s: &str) -> std::io::Result<()> {
+    let must_quote = s.contains([',', '"', '\n', '\r'])
         || s.starts_with(' ')
         || s.ends_with(' ');
     if !must_quote {
-        return s.to_string();
+        return f.write_all(s.as_bytes());
     }
-    let mut out = String::from("\"");
-    for c in s.chars() {
-        if c == '"' {
-            out.push('"');
-        }
-        out.push(c);
+    f.write_all(b"\"")?;
+    let mut rest = s;
+    while let Some(i) = rest.find('"') {
+        f.write_all(rest[..i].as_bytes())?;
+        f.write_all(b"\"\"")?;
+        rest = &rest[i + 1..];
     }
-    out.push('"');
-    out
+    f.write_all(rest.as_bytes())?;
+    f.write_all(b"\"")
 }
 
 fn write_csv(rows: &[Vec<String>], f: &mut impl Write) -> std::io::Result<()> {
@@ -207,7 +204,7 @@ fn write_csv(rows: &[Vec<String>], f: &mut impl Write) -> std::io::Result<()> {
             if i > 0 {
                 f.write_all(b",")?;
             }
-            f.write_all(csv_escape(c).as_bytes())?;
+            write_csv_cell(f, c)?;
         }
         f.write_all(b"\n")?;
     }
@@ -233,9 +230,12 @@ fn write_txt(rows: &[Vec<String>], f: &mut impl Write) -> std::io::Result<()> {
             let cell = row.get(i).map(String::as_str).unwrap_or("");
             f.write_all(cell.as_bytes())?;
             if i + 1 < ncols {
-                let pad = w.saturating_sub(cell.chars().count());
-                for _ in 0..pad {
-                    f.write_all(b" ")?;
+                let mut pad = w.saturating_sub(cell.chars().count());
+                const SPACES: &[u8] = &[b' '; 64];
+                while pad > 0 {
+                    let n = pad.min(SPACES.len());
+                    f.write_all(&SPACES[..n])?;
+                    pad -= n;
                 }
             }
         }

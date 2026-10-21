@@ -4,6 +4,7 @@ use crate::util::{get_extension, is_svg, normalize_ext};
 use image::ImageDecoder;
 use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::sync::OnceLock;
 
 const BUF: usize = 256 * 1024;
 
@@ -38,10 +39,14 @@ fn into_rgb8(img: image::DynamicImage) -> image::RgbImage {
     }
 }
 
+fn svg_options() -> &'static resvg::usvg::Options<'static> {
+    static OPTS: OnceLock<resvg::usvg::Options<'static>> = OnceLock::new();
+    OPTS.get_or_init(|| resvg::usvg::Options::default())
+}
+
 fn load_svg(input: &Path, geometry: &Geometry) -> Result<image::DynamicImage, TummlerError> {
     let data = std::fs::read(input).map_err(map_io)?;
-    let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default())
-        .map_err(map_img)?;
+    let tree = resvg::usvg::Tree::from_data(&data, svg_options()).map_err(map_img)?;
     let size = tree.size();
     let ow = size.width().max(1.0);
     let oh = size.height().max(1.0);
@@ -52,7 +57,7 @@ fn load_svg(input: &Path, geometry: &Geometry) -> Result<image::DynamicImage, Tu
     let transform =
         resvg::tiny_skia::Transform::from_scale(nw as f32 / ow, nh as f32 / oh);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
-    let rgba = image::RgbaImage::from_raw(nw, nh, pixmap.data().to_vec())
+    let rgba = image::RgbaImage::from_raw(nw, nh, pixmap.take())
         .ok_or_else(|| TummlerError::ImageError("svg raster failed".into()))?;
     Ok(image::DynamicImage::ImageRgba8(rgba))
 }
@@ -90,8 +95,10 @@ pub fn convert_image(
             let fmt = image_format_from_ext(&output_ext).ok_or_else(|| {
                 TummlerError::ImageError(format!("unsupported output format {output_ext}"))
             })?;
-            img.save_with_format(output, fmt)
-                .map_err(|e| TummlerError::ImageError(format!("failed to save {output_ext}: {e}")))?;
+            let file = std::fs::File::create(output).map_err(map_io)?;
+            let mut writer = BufWriter::with_capacity(BUF, file);
+            img.write_to(&mut writer, fmt).map_err(map_img)?;
+            writer.flush().map_err(map_io)?;
         }
     }
 
