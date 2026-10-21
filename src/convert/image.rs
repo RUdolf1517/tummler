@@ -92,7 +92,9 @@ fn load_jpeg_scaled(
         .info()
         .ok_or_else(|| TummlerError::ImageError("jpeg decode".into()))?;
     let img = jpeg_pixels_to_image(info, pixels)?;
-    Ok(Some(apply_orientation(img, orientation)))
+    // DCT output is ≥ target; finish to exact pixels. Do not run apply_geometry
+    // afterwards — --resize 50% is already baked into (tw, th).
+    Ok(Some(resize_to(apply_orientation(img, orientation), tw, th)))
 }
 
 fn jpeg_pixels_to_image(
@@ -162,15 +164,14 @@ pub fn convert_image(
     let img = if is_svg(&get_extension(input).unwrap_or_default()) {
         load_svg(input, geometry)?
     } else {
-        let loaded = if !geometry.is_noop() && is_jpeg_input(input) {
+        if !geometry.is_noop() && is_jpeg_input(input) {
             match load_jpeg_scaled(input, geometry) {
                 Ok(Some(img)) => img,
-                _ => load_image(input)?,
+                _ => apply_geometry(load_image(input)?, geometry),
             }
         } else {
-            load_image(input)?
-        };
-        apply_geometry(loaded, geometry)
+            apply_geometry(load_image(input)?, geometry)
+        }
     };
 
     match output_ext.as_str() {
@@ -197,12 +198,8 @@ pub fn convert_image(
     Ok(())
 }
 
-fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::DynamicImage {
-    if geometry.is_noop() {
-        return img;
-    }
+fn resize_to(img: image::DynamicImage, nw: u32, nh: u32) -> image::DynamicImage {
     let (w, h) = (img.width(), img.height());
-    let (nw, nh) = geometry.target_size(w, h);
     if nw == w && nh == h {
         img
     } else {
@@ -214,6 +211,14 @@ fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::Dynam
         };
         img.resize(nw, nh, filter)
     }
+}
+
+fn apply_geometry(img: image::DynamicImage, geometry: &Geometry) -> image::DynamicImage {
+    if geometry.is_noop() {
+        return img;
+    }
+    let (nw, nh) = geometry.target_size(img.width(), img.height());
+    resize_to(img, nw, nh)
 }
 
 fn image_format_from_ext(ext: &str) -> Option<image::ImageFormat> {
