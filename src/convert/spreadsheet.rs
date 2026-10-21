@@ -190,7 +190,7 @@ fn write_csv_cell(f: &mut impl Write, s: &str) -> std::io::Result<()> {
     f.write_all(b"\"")?;
     let mut rest = s;
     while let Some(i) = rest.find('"') {
-        f.write_all(rest[..i].as_bytes())?;
+        f.write_all(&rest.as_bytes()[..i])?;
         f.write_all(b"\"\"")?;
         rest = &rest[i + 1..];
     }

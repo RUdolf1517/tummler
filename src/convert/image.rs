@@ -41,7 +41,7 @@ fn into_rgb8(img: image::DynamicImage) -> image::RgbImage {
 
 fn svg_options() -> &'static resvg::usvg::Options<'static> {
     static OPTS: OnceLock<resvg::usvg::Options<'static>> = OnceLock::new();
-    OPTS.get_or_init(|| resvg::usvg::Options::default())
+    OPTS.get_or_init(Default::default)
 }
 
 fn load_svg(input: &Path, geometry: &Geometry) -> Result<image::DynamicImage, TummlerError> {
