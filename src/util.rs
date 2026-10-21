@@ -600,7 +600,7 @@ pub fn print_supported_formats() {
     );
     println!(
         "     {}",
-        "pdf → png/jpg (poppler, all pages in one image; -p N);  pdf → docx (soffice if present, else pdftotext+pandoc)".cyan()
+        "pdf → png/jpg (poppler, all pages in one image; --page N);  pdf → docx (soffice if present, else pdftotext+pandoc)".cyan()
     );
     println!();
 

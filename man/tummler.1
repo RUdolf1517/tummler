@@ -98,7 +98,7 @@ Longest side in pixels (images/video). Never upscales.
 .BR 50% ", " 800x ", " x600 ", or " 800x600
 (images/video). Aspect kept.
 .TP
-.BR \-p ", " \-\-page =\fIN
+.BI \-\-page " N
 PDF page (1-based). Default: all pages stacked in one image.
 .TP
 .BR \-j ", " \-\-jobs =\fIN
@@ -186,7 +186,7 @@ tummler report.docx pdf
 .TQ
 tummler report.pdf png
 .TQ
-tummler report.pdf png \-p 2
+tummler report.pdf png \-\-page 2
 .TQ
 tummler report.pdf docx
 .TQ
@@ -203,7 +203,7 @@ Documents. A pandoc PDF needs LaTeX.
 .TP
 .B poppler
 .B pdftoppm
-(PDF → image, all pages stacked; \-p N for one) and
+(PDF → image, all pages stacked; \-\-page N for one) and
 .B pdftotext
 (PDF → text / docx fallback).
 .TP
