@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Homebrew: 0.3.2 bottles, including Intel Mac (`x86_64-apple-darwin`)
+
 ## 0.3.2 — 2026-10-21
 
 - JPEG `--max` / `--resize`: decode at 1/2, 1/4 or 1/8 (DCT) when that still covers the target, then Triangle to the exact size

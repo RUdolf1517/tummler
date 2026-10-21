@@ -30,12 +30,13 @@ brew install RUdolf1517/tummler/tummler
 
 Homebrew 6+ [tap trust](https://docs.brew.sh/Tap-Trust): the fully qualified name trusts only this formula. Short name needs `brew trust --formula RUdolf1517/tummler/tummler` first. Custom remote is required because this repo is not named `homebrew-tummler`.
 
-v0.3.1 hashes:
+v0.3.2 hashes:
 
 ```
-6a8bc2079b7cf50726ec4bdfc7c4bace26ab8e3dac0c6e02b44b927585006d4a  tummler-aarch64-apple-darwin.tar.gz
-f6755647926f7dc2206d4a6e220bc0e46224f53aaccd280fd9c3ea8a54a3329d  tummler-aarch64-unknown-linux-gnu.tar.gz
-9dfe8fda4ed4ed63b9a2067b1b5ce56240d805a11faccce07ac21c9c806a8576  tummler-x86_64-unknown-linux-gnu.tar.gz
+eea76f9ce9b53106687c007ef61c66a3b6de904ad8cd80a3d0afa66f4e1a39d7  tummler-aarch64-apple-darwin.tar.gz
+aba7b09d3fc42286a4edd9201e8052b0256704d0b5b28e482940c780ee746093  tummler-aarch64-unknown-linux-gnu.tar.gz
+39648d9d2ea677744483e220f7d362b7ef261d10b9d1aec6a6b88f6647f0e59f  tummler-x86_64-apple-darwin.tar.gz
+410a2b65d8c7f2190da432e2df7463e67bdc60ef39e1bca7c85280b11fffc890  tummler-x86_64-unknown-linux-gnu.tar.gz
 ```
 
 ## GitHub About
