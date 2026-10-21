@@ -1,5 +1,6 @@
 use crate::deps;
 use crate::error::TummlerError;
+use crate::geom::Geometry;
 use crate::interrupt;
 use crate::util::{classify_ext, is_ffmpeg_image, is_pdf, normalize_ext, FormatKind};
 use std::path::{Path, PathBuf};
@@ -55,8 +56,14 @@ fn pdf_to_image(
     opts: &ConvertOpts<'_>,
 ) -> Result<(), TummlerError> {
     let tmp = tempfile::tempdir().map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let raster = raster_first_page(input, tmp.path(), opts)?;
-    if target == "png" && opts.geometry.is_noop() {
+    let (raster, already_sized) = raster_first_page(input, tmp.path(), opts)?;
+    let noop = Geometry::default();
+    let geometry = if already_sized {
+        &noop
+    } else {
+        opts.geometry
+    };
+    if target == "png" && geometry.is_noop() {
         std::fs::copy(&raster, output).map_err(|e| {
             TummlerError::IoError(format!("failed to write {}: {e}", output.display()))
         })?;
@@ -70,32 +77,85 @@ fn pdf_to_image(
             opts.ffmpeg_args,
             opts.no_auto_install,
             opts.assume_yes,
-            opts.geometry,
+            geometry,
             opts.ffmpeg_threads,
         );
     }
-    image::convert_image(&raster, output, opts.quality, opts.geometry)
+    image::convert_image(&raster, output, opts.quality, geometry)
+}
+
+/// 150 dpi pixels for a PDF page in points (poppler's default raster).
+fn pts_to_px(pts: f32) -> u32 {
+    (pts * 150.0 / 72.0).round().max(1.0) as u32
+}
+
+fn parse_pdfinfo_page_pts(text: &str) -> Option<(f32, f32)> {
+    let mut size = None;
+    let mut rot = 0i32;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("Page size:") {
+            let mut parts = rest.split_whitespace();
+            let w: f32 = parts.next()?.parse().ok()?;
+            if parts.next()? != "x" {
+                return None;
+            }
+            let h: f32 = parts.next()?.parse().ok()?;
+            size = Some((w, h));
+        } else if let Some(rest) = line.strip_prefix("Page rot:") {
+            rot = rest.trim().parse().unwrap_or(0);
+        }
+    }
+    let (w, h) = size?;
+    if rot.rem_euclid(180) == 90 {
+        Some((h, w))
+    } else {
+        Some((w, h))
+    }
+}
+
+fn pdf_page_pts(input: &Path) -> Option<(f32, f32)> {
+    let out = Command::new("pdfinfo").arg(input).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_pdfinfo_page_pts(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// pdftoppm size flags + whether the PNG is already at `geometry.target_size`.
+fn pdftoppm_fit(geometry: &Geometry, page_pts: Option<(f32, f32)>) -> (Vec<String>, bool) {
+    if let Some((pw, ph)) = page_pts {
+        let w = pts_to_px(pw);
+        let h = pts_to_px(ph);
+        let (tw, th) = geometry.target_size(w, h);
+        if tw == w && th == h {
+            return (vec!["-r".into(), "150".into()], true);
+        }
+        return (
+            vec!["-scale-to".into(), tw.max(th).to_string()],
+            true,
+        );
+    }
+    match (geometry.resize.is_none(), geometry.max) {
+        (true, None) => (vec!["-r".into(), "150".into()], true),
+        (true, Some(max)) => (vec!["-scale-to".into(), max.to_string()], true),
+        _ => (vec!["-r".into(), "150".into()], false),
+    }
 }
 
 fn raster_first_page(
     input: &Path,
     tmp: &Path,
     opts: &ConvertOpts<'_>,
-) -> Result<PathBuf, TummlerError> {
+) -> Result<(PathBuf, bool), TummlerError> {
     deps::ensure_available("pdftoppm", opts.no_auto_install, opts.assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("pdftoppm".into(), e))?;
 
+    let (scale, already_sized) = pdftoppm_fit(opts.geometry, pdf_page_pts(input));
     let prefix = tmp.join("page");
     let mut cmd = Command::new("pdftoppm");
     cmd.args(["-png", "-f", "1", "-l", "1"]);
-    // --max: raster at the target long side instead of 150dpi-then-downscale.
-    match (opts.geometry.resize.is_none(), opts.geometry.max) {
-        (true, Some(max)) => {
-            cmd.arg("-scale-to").arg(max.to_string());
-        }
-        _ => {
-            cmd.args(["-r", "150"]);
-        }
+    for a in &scale {
+        cmd.arg(a);
     }
     cmd.arg(input).arg(&prefix);
 
@@ -111,7 +171,7 @@ fn raster_first_page(
     }
 
     if let Some(png) = first_png(tmp) {
-        return Ok(png);
+        return Ok((png, already_sized));
     }
     Err(TummlerError::PdfError(
         "pdftoppm produced no PNG for page 1".into(),
@@ -218,7 +278,6 @@ pub(crate) fn sample_pdf(_text: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom::Geometry;
 
     fn opts<'a>(geometry: &'a Geometry, overwrite: bool) -> ConvertOpts<'a> {
         ConvertOpts {
@@ -295,6 +354,53 @@ mod tests {
     }
 
     #[test]
+    fn pdfinfo_page_pts() {
+        let letter = "Pages:          1\nPage size:      612 x 792 pts (letter)\nPage rot:       0\n";
+        assert_eq!(parse_pdfinfo_page_pts(letter), Some((612.0, 792.0)));
+        let a4 = "Page size:      595.28 x 841.89 pts (A4)\nPage rot:       90\n";
+        let (w, h) = parse_pdfinfo_page_pts(a4).unwrap();
+        assert!((w - 841.89).abs() < 0.01);
+        assert!((h - 595.28).abs() < 0.01);
+        assert!(parse_pdfinfo_page_pts("Pages: 1\n").is_none());
+    }
+
+    #[test]
+    fn pdftoppm_fit_max_and_resize() {
+        let letter = Some((612.0, 792.0));
+        let (args, sized) = pdftoppm_fit(&Geometry::default(), letter);
+        assert_eq!(args, ["-r", "150"]);
+        assert!(sized);
+
+        let g = Geometry {
+            max: Some(200),
+            resize: None,
+        };
+        let (args, sized) = pdftoppm_fit(&g, letter);
+        assert_eq!(args[0], "-scale-to");
+        let long: u32 = args[1].parse().unwrap();
+        assert_eq!(long, 200);
+        assert!(sized);
+
+        let g = Geometry {
+            max: None,
+            resize: Some(crate::geom::ResizeSpec::Width(400)),
+        };
+        let (args, sized) = pdftoppm_fit(&g, letter);
+        assert_eq!(args[0], "-scale-to");
+        let long: u32 = args[1].parse().unwrap();
+        assert!(long >= 400);
+        assert!(sized);
+
+        let g = Geometry {
+            max: Some(1920),
+            resize: None,
+        };
+        let (args, sized) = pdftoppm_fit(&g, None);
+        assert_eq!(args, ["-scale-to", "1920"]);
+        assert!(sized);
+    }
+
+    #[test]
     fn pdf_to_png_respects_max() {
         if !deps::is_available("pdftoppm") {
             return;
@@ -312,6 +418,25 @@ mod tests {
         assert!(decoded.width() <= 200);
         assert!(decoded.height() <= 200);
         assert!(decoded.width() >= 50);
+    }
+
+    #[test]
+    fn pdf_to_png_respects_resize_width() {
+        if !deps::is_available("pdftoppm") {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let input = write_sample(dir.path());
+        let out = dir.path().join("hello.png");
+        let g = Geometry {
+            max: None,
+            resize: Some(crate::geom::ResizeSpec::Width(400)),
+        };
+        convert_pdf(&input, &out, "png", &opts(&g, true))
+            .unwrap_or_else(|e| panic!("pdf→png --resize: {e}"));
+        let decoded = ::image::open(&out).unwrap();
+        assert_eq!(decoded.width(), 400);
+        assert!(decoded.height() >= 400);
     }
 
     #[test]

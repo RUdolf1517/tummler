@@ -115,7 +115,7 @@ TTY: spinner for one file, progress bar for a batch. `--quiet` and pipes stay si
 
 ```bash
 tummler photo.png jpeg -q 90
-tummler photo.png jpg --max 1920          # longest side, never upscales
+tummler photo.png jpg --max 1920          # longest side, never upscales (JPEG: DCT 1/2–1/8)
 tummler photo.png webp --resize 50%       # lossless unless -q
 tummler photo.png webp -q 80              # lossy (ffmpeg)
 tummler photo.png avif -q 70
@@ -138,7 +138,7 @@ tummler report.pdf png
 tummler report.pdf png --max 1920
 ```
 
-PDF → png/jpg uses poppler `pdftoppm` (first page). PDF → docx uses **LibreOffice** if `soffice` is already on PATH (`writer_pdf_import`). Otherwise poppler `pdftotext` + pandoc (text only, auto-installed). `pdf → pptx` is not supported.
+PDF → png/jpg uses poppler `pdftoppm` (first page; `--max` / `--resize` raster at the target size). PDF → docx uses **LibreOffice** if `soffice` is already on PATH (`writer_pdf_import`). Otherwise poppler `pdftotext` + pandoc (text only, auto-installed). `pdf → pptx` is not supported.
 
 ### Spreadsheets
 
