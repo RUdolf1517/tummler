@@ -7,8 +7,8 @@ Do this **after** merging to `main`. Binaries first, then Homebrew hashes, then 
 ```bash
 git checkout main
 git pull
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 Actions builds Apple Silicon, Linux x86_64, and Linux ARM tarballs and attaches them to the release. Intel Mac is not bottled (`brew install --HEAD`).
