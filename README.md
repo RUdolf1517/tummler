@@ -58,15 +58,13 @@ brew trust --formula RUdolf1517/tummler/tummler
 brew install tummler
 ```
 
-Intel Mac: GitHub Releases include `x86_64-apple-darwin` (so `install.sh` works). Homebrew bottle is added after that tag’s SHA-256 is in the Formula; until then `brew install --HEAD RUdolf1517/tummler/tummler` (needs Rust).
-
 **Cargo** ([Rust 1.99+](https://rustup.rs)):
 
 ```bash
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
-macOS (Apple Silicon) and Linux, x86_64 and ARM.
+macOS (Apple Silicon and Intel) and Linux, x86_64 and ARM.
 
 ffmpeg (video/HEIC), pandoc (documents), poppler (PDF → png/docx) — tummler offers to install them in a TTY. LibreOffice (`soffice`) is used only if already on PATH. Never asked for, never installed.
 
