@@ -1,13 +1,22 @@
-# brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler
-# brew install tummler
+# Third-party tap (Homebrew 6+ tap trust). Custom remote: this repo is not
+# named homebrew-tummler, so brew tap needs the GitHub URL.
 #
-# Prebuilt binaries from GitHub Releases (no Rust). Intel Mac: brew install --HEAD.
+#   brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler
+#   brew install RUdolf1517/tummler/tummler
+#
+# Short name: brew trust --formula RUdolf1517/tummler/tummler && brew install tummler
+# Intel Mac:  brew install --HEAD RUdolf1517/tummler/tummler
 
 class Tummler < Formula
   desc "One CLI that mixes any file into any format"
   homepage "https://github.com/RUdolf1517/tummler"
   version "0.3.0"
   license "MIT"
+
+  livecheck do
+    url :homepage
+    strategy :github_latest
+  end
 
   on_macos do
     on_arm do
@@ -40,9 +49,39 @@ class Tummler < Formula
     else
       bin.install "tummler"
     end
+
+    generate_completions_from_executable(bin/"tummler", "--completions",
+                                         shells: [:bash, :zsh, :fish])
+
+    # 0.3.0 bottles have --completions but not --man.
+    manpage = Utils.popen_read(bin/"tummler", "--man")
+    if $CHILD_STATUS.success? && manpage.include?(".TH TUMMLER")
+      (man1/"tummler.1").write manpage
+    end
+  end
+
+  def caveats
+    s = <<~EOS
+      Optional tools (tummler offers to install them in a TTY):
+        ffmpeg   video / HEIC / AVIF
+        pandoc   documents
+        poppler  PDF → png / docx
+      LibreOffice (soffice) is never auto-installed; slides need it already on PATH.
+    EOS
+    if OS.mac? && Hardware::CPU.intel?
+      s += <<~EOS
+
+        No Intel Mac bottle. Use: brew install --HEAD RUdolf1517/tummler/tummler
+      EOS
+    end
+    s
   end
 
   test do
-    assert_match "tummler", shell_output("#{bin}/tummler --version")
+    assert_match version.to_s, shell_output("#{bin}/tummler --version")
+    assert_match "png", shell_output("#{bin}/tummler --list-formats")
+    if shell_output("#{bin}/tummler --help").include?("--man")
+      assert_match ".TH TUMMLER", shell_output("#{bin}/tummler --man")
+    end
   end
 end

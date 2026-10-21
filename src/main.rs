@@ -44,6 +44,11 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_OK;
     }
 
+    if cli.man {
+        print!("{}", include_str!("../man/tummler.1"));
+        return ui::EXIT_OK;
+    }
+
     if cli.info {
         util::print_info();
         return ui::EXIT_OK;

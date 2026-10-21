@@ -2,6 +2,7 @@ use colored::Colorize;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::OnceLock;
 
 /// Check whether a binary is on PATH.
 pub fn is_available(bin: &str) -> bool {
@@ -10,6 +11,11 @@ pub fn is_available(bin: &str) -> bool {
 
 /// LibreOffice, if the user already installed it. Never auto-installed.
 pub fn soffice_bin() -> Option<PathBuf> {
+    static CACHED: OnceLock<Option<PathBuf>> = OnceLock::new();
+    CACHED.get_or_init(find_soffice).clone()
+}
+
+fn find_soffice() -> Option<PathBuf> {
     for name in ["soffice", "libreoffice"] {
         if let Ok(p) = which::which(name) {
             return Some(p);

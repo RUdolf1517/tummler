@@ -196,6 +196,7 @@ fn pack_one_tar(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerErr
 
 fn zip_to_tar(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerError> {
     let file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let file = io::BufReader::with_capacity(64 * 1024, file);
     let mut zip =
         zip::ZipArchive::new(file).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
     let out = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
@@ -572,6 +573,7 @@ fn pack_archive(src_dir: &Path, output: &Path, ext: &str) -> Result<(), TummlerE
 
 fn unpack_zip(input: &Path, dest: &Path) -> Result<(), TummlerError> {
     let file = File::open(input).map_err(|e| TummlerError::IoError(e.to_string()))?;
+    let file = io::BufReader::with_capacity(64 * 1024, file);
     let mut archive = zip::ZipArchive::new(file).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
 
     for i in 0..archive.len() {
@@ -587,8 +589,12 @@ fn unpack_zip(input: &Path, dest: &Path) -> Result<(), TummlerError> {
             if let Some(parent) = out_path.parent() {
                 std::fs::create_dir_all(parent).map_err(|e| TummlerError::IoError(e.to_string()))?;
             }
-            let mut out_file = File::create(&out_path).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            let mut out_file = io::BufWriter::with_capacity(
+                64 * 1024,
+                File::create(&out_path).map_err(|e| TummlerError::IoError(e.to_string()))?,
+            );
             io::copy(&mut file, &mut out_file).map_err(|e| TummlerError::IoError(e.to_string()))?;
+            out_file.flush().map_err(|e| TummlerError::IoError(e.to_string()))?;
         }
 
         #[cfg(unix)]
@@ -692,7 +698,7 @@ fn unpack_zst(input: &Path, dest: &Path) -> Result<(), TummlerError> {
 
 fn pack_zip(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
     let file = File::create(output).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    let mut zip = zip::ZipWriter::new(file);
+    let mut zip = zip::ZipWriter::new(io::BufWriter::with_capacity(64 * 1024, file));
     let file_opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o644);
@@ -717,7 +723,10 @@ fn pack_zip(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
         }
     }
 
-    zip.finish().map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+    let mut inner = zip
+        .finish()
+        .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+    inner.flush().map_err(|e| TummlerError::IoError(e.to_string()))?;
     Ok(())
 }
 
