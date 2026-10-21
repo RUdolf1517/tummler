@@ -720,6 +720,14 @@ mod tests {
     }
 
     #[test]
+    fn man_page_is_groff() {
+        let man = include_str!("../man/tummler.1");
+        assert!(man.contains(".TH TUMMLER 1"));
+        assert!(man.contains("tummler photo.png jpg"));
+        assert!(man.contains("pdftoppm"));
+    }
+
+    #[test]
     fn test_resolve_no_output() {
         let input = Path::new("/tmp/photo.png");
         let out = resolve_output_path(input, "jpg", None, false).unwrap();

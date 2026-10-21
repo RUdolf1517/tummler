@@ -159,4 +159,8 @@ pub struct Cli {
     /// Shell completion script
     #[arg(long = "completions", value_name = "SHELL", value_enum)]
     pub completions: Option<ShellKind>,
+
+    /// Write the man page (groff) to stdout
+    #[arg(long = "man")]
+    pub man: bool,
 }

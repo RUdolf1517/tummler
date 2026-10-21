@@ -1,0 +1,186 @@
+.TH TUMMLER 1 "2026-10-21" "tummler 0.3.0" "User Commands"
+.SH NAME
+tummler \- mix any file into any format
+.SH SYNOPSIS
+.B tummler
+[\fIOPTIONS\fR]
+.I INPUT\fR...
+[\fIFORMAT\fR]
+.SH DESCRIPTION
+tummler converts files by putting the target format last:
+.PP
+.RS
+tummler photo.png jpg
+.RE
+.PP
+Native Rust for images, spreadsheets and archives.
+ffmpeg for audio/video and HEIC/AVIF.
+pandoc for documents.
+poppler (\fBpdftoppm\fR / \fBpdftotext\fR) for PDF as input.
+LibreOffice (\fBsoffice\fR) is used only if already on PATH; tummler never installs it.
+.PP
+The last argument is the format if it is a known extension.
+.B \-\-
+separates files whose names start with
+.BR \- .
+.B \-
+means stdin/stdout.
+.SH OPTIONS
+.TP
+.BI \-f " EXT" "\fR, \fB\-\-format=" EXT
+Target format explicitly.
+.TP
+.BI \-o " PATH" "\fR, \fB\-\-output=" PATH
+Output file or directory.
+.B \-
+is stdout.
+.TP
+.BI \-q " N" "\fR, \fB\-\-quality=" N
+Lossy quality 1–100.
+.TP
+.B \-\-overwrite\fR, \fB\-\-force
+Replace existing files.
+.TP
+.BR \-r ", " \-\-recursive
+Walk directories.
+.TP
+.BI \-\-include " GLOB
+Keep matching files (repeatable). Matches name or path.
+.TP
+.BI \-\-exclude " GLOB
+Drop matching files (repeatable).
+.TP
+.B \-\-skip\-newer
+Skip if the output exists and is not older than the input.
+.TP
+.BI \-\-max " PX
+Longest side in pixels (images/video). Never upscales.
+.TP
+.BI \-\-resize " SPEC
+.BR 50% ", " 800x ", " x600 ", or " 800x600
+(images/video). Aspect kept.
+.TP
+.BR \-j ", " \-\-jobs =\fIN
+Parallel jobs. 0 means the number of CPUs (media capped at 2).
+.TP
+.BR \-v ", " \-\-verbose
+Log on stderr.
+.TP
+.B \-\-quiet
+Errors only.
+.TP
+.BR \-n ", " \-\-dry\-run
+Print the plan, write nothing.
+.TP
+.BI \-\-color " WHEN
+auto, always, or never.
+.TP
+.B \-\-no\-color
+Same as
+.BR \-\-color=never .
+.TP
+.BR \-i ", " \-\-info
+About tummler.
+.TP
+.B \-\-list\-formats
+Supported formats.
+.TP
+.B \-\-check\-deps
+Status of ffmpeg, pandoc, poppler, soffice.
+.TP
+.B \-\-no\-auto\-install
+Do not offer to install missing tools.
+.TP
+.BR \-y ", " \-\-yes
+Install missing tools without prompting.
+.TP
+.BI \-\-sheet " NAME
+Spreadsheet sheet. First sheet by default.
+.B *
+means every sheet, each to its own file.
+.TP
+.B \-\-all\-sheets
+Every sheet →
+.I table\-Sheet1.csv
+(and so on).
+.TP
+.BI \-\-ffmpeg\-args " ARGS
+Extra ffmpeg arguments.
+.TP
+.BI \-\-completions " SHELL
+Print a completion script: bash, zsh, fish, powershell, elvish.
+.TP
+.B \-\-man
+Print this man page (groff) to stdout.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Conversion failed.
+.TP
+.B 2
+Invalid arguments.
+.TP
+.B 130
+Interrupted (Ctrl\-C). Child ffmpeg/pandoc/pdftoppm processes are killed.
+.SH EXAMPLES
+.TP
+tummler photo.png jpg
+.TQ
+tummler photo.png jpeg \-q 80
+.TQ
+tummler icon.svg png
+.TQ
+tummler photo.heic jpg \-\-max 1920
+.TQ
+tummler ./photos webp \-r \-\-skip\-newer \-o ./out
+.TQ
+tummler table.xlsx csv
+.TQ
+tummler table.csv xlsx
+.TQ
+tummler report.docx pdf
+.TQ
+tummler report.pdf png
+.TQ
+tummler report.pdf docx
+.TQ
+tummler slides.pptx pdf
+.TQ
+cat in.png | tummler \- jpeg > out.jpeg
+.SH DEPENDENCIES
+.TP
+.B ffmpeg
+Audio, video, HEIC, AVIF, lossy WebP.
+.TP
+.B pandoc
+Documents. A pandoc PDF needs LaTeX.
+.TP
+.B poppler
+.B pdftoppm
+(PDF → image, first page) and
+.B pdftotext
+(PDF → text / docx fallback).
+.TP
+.B soffice
+Optional. Slides, and Word/PDF layout when already installed. Never auto-installed.
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+Disable color when set (non-empty).
+.TP
+.B TERM
+.B dumb
+disables color.
+.SH SEE ALSO
+.BR ffmpeg (1),
+.BR pandoc (1),
+.BR pdftoppm (1),
+.BR pdftotext (1),
+.BR soffice (1)
+.SH BUGS
+https://github.com/RUdolf1517/tummler/issues
+.SH AUTHOR
+RUdolf1517 <rudolfzinovev@protonmail.com>

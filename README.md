@@ -201,6 +201,7 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --all-sheets          every sheet → `table-Sheet1.csv`
       --ffmpeg-args <ARGS>
       --completions <SHELL> bash | zsh | fish | powershell | elvish
+      --man                     groff man page to stdout
 ```
 
 Exit: `0` ok · `1` conversion failed · `2` bad args · `130` Ctrl-C (kills ffmpeg).
@@ -227,10 +228,13 @@ tummler --check-deps
 
 ## Completions
 
+Homebrew installs bash/zsh/fish completions and the man page (`man tummler`).
+
 ```bash
 tummler --completions bash | sudo tee /etc/bash_completion.d/tummler
 tummler --completions zsh  > ~/.zfunc/_tummler
 tummler --completions fish > ~/.config/fish/completions/tummler.fish
+tummler --man | groff -man -Tascii | less
 ```
 
 ## How it works

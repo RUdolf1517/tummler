@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `tummler --man` (groff). Homebrew installs the man page and bash/zsh/fish completions
+- CI: `actions/checkout@v5`, artifact actions v6, pin `ubuntu-24.04`
+- Formula: `livecheck`, caveats for ffmpeg/pandoc/poppler, Intel `--HEAD` note
+
 ## 0.3.0 — 2026-10-21
 
 - PDF → png/jpg/webp/… via poppler `pdftoppm` (first page; `--max` uses `-scale-to`)

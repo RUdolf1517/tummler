@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             archive: tummler-x86_64-unknown-linux-gnu.tar.gz
           - os: ubuntu-24.04-arm
@@ -33,7 +33,7 @@ jobs:
             archive: tummler-aarch64-apple-darwin.tar.gz
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: System deps (Linux)
         if: runner.os == 'Linux'
@@ -59,7 +59,7 @@ jobs:
           shasum -a 256 ../../../${{ matrix.archive }} | tee ../../../${{ matrix.archive }}.sha256
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.archive }}
           path: |
@@ -68,13 +68,13 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: always() && startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: dist
           merge-multiple: true
@@ -101,12 +101,12 @@ jobs:
 
   ci:
     name: ci
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: System deps
-        run: sudo apt-get update && sudo apt-get install -y pkg-config liblzma-dev libbz2-dev
+        run: sudo apt-get update && sudo apt-get install -y pkg-config liblzma-dev libbz2-dev poppler-utils pandoc
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.1

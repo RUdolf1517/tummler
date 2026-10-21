@@ -9,6 +9,11 @@ class Tummler < Formula
   version "0.3.0"
   license "MIT"
 
+  livecheck do
+    url :homepage
+    strategy :github_latest
+  end
+
   on_macos do
     on_arm do
       url "https://github.com/RUdolf1517/tummler/releases/download/v0.3.0/tummler-aarch64-apple-darwin.tar.gz"
@@ -40,9 +45,32 @@ class Tummler < Formula
     else
       bin.install "tummler"
     end
+
+    generate_completions_from_executable(bin/"tummler", "--completions",
+                                         shells: [:bash, :zsh, :fish])
+    (man1/"tummler.1").write Utils.safe_popen_read(bin/"tummler", "--man")
+  end
+
+  def caveats
+    s = <<~EOS
+      Optional tools (tummler offers to install them in a TTY):
+        ffmpeg   video / HEIC / AVIF
+        pandoc   documents
+        poppler  PDF → png / docx
+      LibreOffice (soffice) is never auto-installed; slides need it already on PATH.
+    EOS
+    if OS.mac? && Hardware::CPU.intel?
+      s += <<~EOS
+
+        No Intel Mac bottle. Use: brew install --HEAD tummler
+      EOS
+    end
+    s
   end
 
   test do
-    assert_match "tummler", shell_output("#{bin}/tummler --version")
+    assert_match version.to_s, shell_output("#{bin}/tummler --version")
+    assert_match "png", shell_output("#{bin}/tummler --list-formats")
+    assert_match ".TH TUMMLER", shell_output("#{bin}/tummler --man")
   end
 end
