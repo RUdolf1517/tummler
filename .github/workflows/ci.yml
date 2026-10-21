@@ -36,8 +36,9 @@ jobs:
           if not p.exists():
               raise SystemExit(0)
           t = re.sub(r"\x1b\[[0-9;]*m", "", p.read_text(errors="replace"))
-          hits = [ln[:200] for ln in t.splitlines() if "error:" in ln or "--> " in ln]
-          for ln in (hits[-40:] or t.splitlines()[-20:]):
+          keys = ("error:", "--> ", "FAILED", "panicked", "assertion")
+          hits = [ln[:240] for ln in t.splitlines() if any(k in ln for k in keys)]
+          for ln in (hits[-40:] or t.splitlines()[-30:]):
               print("::error::" + ln)
           PY
       - name: cargo clippy

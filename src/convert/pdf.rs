@@ -87,9 +87,17 @@ fn raster_first_page(
 
     let prefix = tmp.join("page");
     let mut cmd = Command::new("pdftoppm");
-    cmd.args(["-png", "-f", "1", "-l", "1", "-singlefile", "-r", "150"])
-        .arg(input)
-        .arg(&prefix);
+    cmd.args(["-png", "-f", "1", "-l", "1"]);
+    // --max: raster at the target long side instead of 150dpi-then-downscale.
+    match (opts.geometry.resize.is_none(), opts.geometry.max) {
+        (true, Some(max)) => {
+            cmd.arg("-scale-to").arg(max.to_string());
+        }
+        _ => {
+            cmd.args(["-r", "150"]);
+        }
+    }
+    cmd.arg(input).arg(&prefix);
 
     let result = interrupt::run(&mut cmd)
         .map_err(|e| TummlerError::PdfError(format!("pdftoppm failed to start: {e}")))?;
@@ -102,19 +110,27 @@ fn raster_first_page(
         )));
     }
 
-    let produced = prefix.with_extension("png");
-    if produced.is_file() {
-        return Ok(produced);
-    }
-    for name in ["page-1.png", "page-01.png"] {
-        let alt = tmp.join(name);
-        if alt.is_file() {
-            return Ok(alt);
-        }
+    if let Some(png) = first_png(tmp) {
+        return Ok(png);
     }
     Err(TummlerError::PdfError(
         "pdftoppm produced no PNG for page 1".into(),
     ))
+}
+
+fn first_png(dir: &Path) -> Option<PathBuf> {
+    let mut pngs: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("png"))
+        })
+        .collect();
+    pngs.sort();
+    pngs.into_iter().next()
 }
 
 fn pdf_to_document(
@@ -149,9 +165,7 @@ fn pdftotext(input: &Path, output: &Path, opts: &ConvertOpts<'_>) -> Result<(), 
         .map_err(|e| TummlerError::DependencyMissing("pdftotext".into(), e))?;
 
     let mut cmd = Command::new("pdftotext");
-    cmd.args(["-layout", "-nopgbrk", "-enc", "UTF-8"])
-        .arg(input)
-        .arg(output);
+    cmd.args(["-layout", "-nopgbrk"]).arg(input).arg(output);
     let result = interrupt::run(&mut cmd)
         .map_err(|e| TummlerError::PdfError(format!("pdftotext failed to start: {e}")))?;
     if !result.status.success() {
@@ -189,41 +203,10 @@ fn pandoc_plain(
     Ok(())
 }
 
-/// One-page PDF with Helvetica text. Used in tests.
+/// One-page Helvetica PDF. Offsets are precomputed (poppler is picky).
 #[cfg(test)]
-pub(crate) fn sample_pdf(text: &str) -> Vec<u8> {
-    let escaped = text
-        .replace('\\', r"\\")
-        .replace('(', r"\(")
-        .replace(')', r"\)");
-    let content = format!("BT /F1 24 Tf 72 720 Td ({escaped}) Tj ET\n");
-    let mut body = Vec::new();
-    body.extend_from_slice(b"%PDF-1.4\n");
-    let mut offsets = vec![0u32];
-    let mut push = |bytes: &[u8]| {
-        offsets.push(body.len() as u32);
-        body.extend_from_slice(bytes);
-    };
-    push(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-    push(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
-    push(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n");
-    let stream = format!(
-        "4 0 obj\n<< /Length {} >>\nstream\n{content}endstream\nendobj\n",
-        content.len()
-    );
-    push(stream.as_bytes());
-    push(b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
-    let xref_at = body.len();
-    let n = offsets.len();
-    body.extend_from_slice(format!("xref\n0 {n}\n").as_bytes());
-    body.extend_from_slice(b"0000000000 65535 f \n");
-    for off in offsets.iter().skip(1) {
-        body.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
-    }
-    body.extend_from_slice(
-        format!("trailer\n<< /Size {n} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n").as_bytes(),
-    );
-    body
+pub(crate) fn sample_pdf(_text: &str) -> Vec<u8> {
+    b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n4 0 obj\n<< /Length 45 >>\nstream\nBT /F1 24 Tf 72 720 Td (Hello tummler) Tj ET\nendstream\nendobj\n5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\nxref\n0 6\n0000000000 65535 f \n0000000015 00000 n \n0000000064 00000 n \n0000000121 00000 n \n0000000247 00000 n \n0000000341 00000 n \ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n411\n%%EOF\n".to_vec()
 }
 
 #[cfg(test)]
@@ -264,6 +247,7 @@ mod tests {
     fn sample_pdf_header() {
         let bytes = sample_pdf("Hi");
         assert!(bytes.starts_with(b"%PDF-1.4"));
+        assert_eq!(bytes.len(), 594);
         assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
         assert!(is_pdf("PDF"));
         assert!(is_pdf(".pdf"));
@@ -296,7 +280,8 @@ mod tests {
         let input = write_sample(dir.path());
         let out = dir.path().join("hello.png");
         let g = Geometry::default();
-        convert_pdf(&input, &out, "png", &opts(&g, true)).unwrap();
+        convert_pdf(&input, &out, "png", &opts(&g, true))
+            .unwrap_or_else(|e| panic!("pdf→png: {e}"));
         assert!(out.exists());
         let decoded = ::image::open(&out).unwrap();
         assert!(decoded.width() >= 100);
@@ -315,7 +300,8 @@ mod tests {
             max: Some(200),
             resize: None,
         };
-        convert_pdf(&input, &out, "png", &opts(&g, true)).unwrap();
+        convert_pdf(&input, &out, "png", &opts(&g, true))
+            .unwrap_or_else(|e| panic!("pdf→png --max: {e}"));
         let decoded = ::image::open(&out).unwrap();
         assert!(decoded.width() <= 200);
         assert!(decoded.height() <= 200);
@@ -331,7 +317,8 @@ mod tests {
         let input = write_sample(dir.path());
         let out = dir.path().join("hello.txt");
         let g = Geometry::default();
-        convert_pdf(&input, &out, "txt", &opts(&g, true)).unwrap();
+        convert_pdf(&input, &out, "txt", &opts(&g, true))
+            .unwrap_or_else(|e| panic!("pdf→txt: {e}"));
         let text = std::fs::read_to_string(&out).unwrap();
         assert!(
             text.contains("Hello"),
@@ -350,7 +337,8 @@ mod tests {
         let input = write_sample(dir.path());
         let out = dir.path().join("hello.docx");
         let g = Geometry::default();
-        convert_pdf(&input, &out, "docx", &opts(&g, true)).unwrap();
+        convert_pdf(&input, &out, "docx", &opts(&g, true))
+            .unwrap_or_else(|e| panic!("pdf→docx: {e}"));
         assert!(out.exists());
         let bytes = std::fs::read(&out).unwrap();
         assert!(bytes.starts_with(b"PK"), "docx should be a zip package");
@@ -382,7 +370,8 @@ mod tests {
         let input = write_sample(dir.path());
         let out = dir.path().join("hello.png");
         let g = Geometry::default();
-        crate::convert::convert_file(&input, &out, "png", &opts(&g, true)).unwrap();
+        crate::convert::convert_file(&input, &out, "png", &opts(&g, true))
+            .unwrap_or_else(|e| panic!("convert_file pdf→png: {e}"));
         let decoded = ::image::open(&out).unwrap();
         assert!(decoded.width() >= 100);
     }

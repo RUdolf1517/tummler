@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- PDF → png/jpg/webp/… via poppler `pdftoppm` (first page; `--max`/`--resize` apply)
+- PDF → png/jpg/webp/… via poppler `pdftoppm` (first page; `--max` uses `-scale-to`)
 - PDF → docx via soffice `writer_pdf_import` if already on PATH; otherwise `pdftotext` + pandoc (text only)
 - PDF → txt via `pdftotext`. `pdf → pptx` stays unsupported. LibreOffice is still never auto-installed
+- `dialoguer` without editor/password features (Confirm only)
 
 ## 0.2.0 — 2026-10-21
 
