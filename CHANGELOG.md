@@ -6,6 +6,7 @@
 - PDF → png/jpg: raster at the target size (`--resize` too, via `pdfinfo` + `pdftoppm -scale-to`); skip a second PNG encode when already sized
 - PDF → png/jpg: default is **all pages stacked in one image**; `--page N` (1-based) picks one page
 - Spreadsheets: `--sheet 2` is the 2nd sheet (1-based); a sheet actually named `2` still wins by name
+- Intel Mac: GitHub Releases build `x86_64-apple-darwin` (Homebrew bottle after the Formula SHA-256)
 
 ## 0.3.1 — 2026-10-21
 

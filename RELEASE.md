@@ -11,7 +11,7 @@ git tag v0.3.1
 git push origin v0.3.1
 ```
 
-Actions builds Apple Silicon, Linux x86_64, and Linux ARM tarballs and attaches them to the release. Intel Mac is not bottled (`brew install --HEAD RUdolf1517/tummler/tummler`).
+Actions builds Apple Silicon, Intel Mac (`x86_64-apple-darwin`), Linux x86_64, and Linux ARM tarballs and attaches them to the release. After the tag, copy the Intel Mac SHA-256 into `Formula/tummler.rb` (`on_macos` / `on_intel`).
 
 Then this works:
 

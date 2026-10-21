@@ -58,7 +58,7 @@ brew trust --formula RUdolf1517/tummler/tummler
 brew install tummler
 ```
 
-Intel Mac has no bottle: `brew install --HEAD RUdolf1517/tummler/tummler` (needs Rust).
+Intel Mac: GitHub Releases include `x86_64-apple-darwin` (so `install.sh` works). Homebrew bottle is added after that tag’s SHA-256 is in the Formula; until then `brew install --HEAD RUdolf1517/tummler/tummler` (needs Rust).
 
 **Cargo** ([Rust 1.99+](https://rustup.rs)):
 
