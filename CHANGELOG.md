@@ -2,11 +2,12 @@
 
 ## Unreleased
 
+## 0.4.0 — 2026-10-22
+
+- Windows x64 (not ARM): GitHub zip `tummler-x86_64-pc-windows-msvc.zip`; winget id `RUdolf1517.tummler`; auto-install ffmpeg/pandoc/poppler via winget
 - Linux packages: `.deb` (apt) and `.rpm` (dnf) on GitHub Releases (`tummler_amd64.deb`, `tummler.x86_64.rpm`, ARM too)
 - Auto-install ffmpeg/pandoc/poppler on Linux: apt/dnf before linuxbrew
-- README: brew / apt / dnf commands for ffmpeg, pandoc, poppler
-- Windows x64 (not ARM): GitHub zip `tummler-x86_64-pc-windows-msvc.zip`; winget id `RUdolf1517.tummler`; auto-install ffmpeg/pandoc/poppler via winget
-- Homebrew: 0.3.4 bottles
+- README: brew / apt / dnf / winget commands for ffmpeg, pandoc, poppler
 
 ## 0.3.4 — 2026-10-22
 

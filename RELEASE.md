@@ -7,8 +7,8 @@ Do this **after** merging to `main`. Binaries first, then Homebrew hashes.
 ```bash
 git checkout main
 git pull
-git tag v0.3.4
-git push origin v0.3.4
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 Actions builds Apple Silicon, Intel Mac (`x86_64-apple-darwin`), Linux x86_64, Linux ARM tarballs, Windows x64 zip (`tummler-x86_64-pc-windows-msvc.zip`, no ARM), plus `.deb` / `.rpm`, and attaches them to the release. After the tag, copy the Intel Mac SHA-256 into `Formula/tummler.rb` (`on_macos` / `on_intel`). Winget id: `RUdolf1517.tummler` (submit the zip to microsoft/winget-pkgs after the release exists).
@@ -30,7 +30,7 @@ brew install RUdolf1517/tummler/tummler
 
 Homebrew 6+ [tap trust](https://docs.brew.sh/Tap-Trust): the fully qualified name trusts only this formula. Short name needs `brew trust --formula RUdolf1517/tummler/tummler` first. Custom remote is required because this repo is not named `homebrew-tummler`.
 
-v0.3.4 hashes:
+v0.4.0 hashes (fill after the GitHub Release):
 
 ```
 6e373d95198b8fd601159386c36f454744efc73fe11acb2a1087b32c171771ce  tummler-aarch64-apple-darwin.tar.gz
