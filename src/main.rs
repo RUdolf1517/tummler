@@ -257,13 +257,19 @@ fn run(mut cli: cli::Cli) -> i32 {
             }
             let planned = match expand_outputs(
                 input,
-                &target_ext,
-                cli.output.as_deref(),
-                multiple,
-                split_sheets,
-                sheet_name,
-                output_structure_root(preserve_structure, input, &cli.inputs),
-                affix,
+                &OutputPlan {
+                    target_ext: &target_ext,
+                    output_arg: cli.output.as_deref(),
+                    multiple,
+                    all_sheets: split_sheets,
+                    sheet: sheet_name,
+                    structure_root: output_structure_root(
+                        preserve_structure,
+                        input,
+                        &cli.inputs,
+                    ),
+                    affix,
+                },
             ) {
                 Ok(p) => p,
                 Err(e) => {
@@ -304,13 +310,19 @@ fn run(mut cli: cli::Cli) -> i32 {
     for input in &valid_inputs {
         let planned = match expand_outputs(
             input,
-            &target_ext,
-            cli.output.as_deref(),
-            multiple,
-            split_sheets,
-            sheet_name,
-            output_structure_root(preserve_structure, input, &cli.inputs),
-            affix,
+            &OutputPlan {
+                target_ext: &target_ext,
+                output_arg: cli.output.as_deref(),
+                multiple,
+                all_sheets: split_sheets,
+                sheet: sheet_name,
+                structure_root: output_structure_root(
+                    preserve_structure,
+                    input,
+                    &cli.inputs,
+                ),
+                affix,
+            },
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -580,30 +592,34 @@ fn output_is_directory_hint(out: &Path, multiple_inputs: bool) -> bool {
         || multiple_inputs
 }
 
+struct OutputPlan<'a> {
+    target_ext: &'a str,
+    output_arg: Option<&'a Path>,
+    multiple: bool,
+    all_sheets: bool,
+    sheet: Option<&'a str>,
+    structure_root: Option<&'a Path>,
+    affix: util::StemAffix<'a>,
+}
+
 fn expand_outputs(
     input: &Path,
-    target_ext: &str,
-    output_arg: Option<&Path>,
-    multiple_inputs: bool,
-    all_sheets: bool,
-    sheet: Option<&str>,
-    structure_root: Option<&Path>,
-    affix: util::StemAffix<'_>,
+    plan: &OutputPlan<'_>,
 ) -> Result<Vec<(PathBuf, Option<String>)>, String> {
     let base = util::resolve_output_path(
         input,
-        target_ext,
-        output_arg,
-        multiple_inputs,
-        structure_root,
-        affix,
+        plan.target_ext,
+        plan.output_arg,
+        plan.multiple,
+        plan.structure_root,
+        plan.affix,
     )?;
     let is_sheet = util::classify_ext(&util::get_extension(input).unwrap_or_default())
         == util::FormatKind::Spreadsheet;
-    if all_sheets && is_sheet {
+    if plan.all_sheets && is_sheet {
         convert::spreadsheet::plan_outputs(input, &base, true, None).map_err(|e| e.to_string())
     } else {
-        Ok(vec![(base, sheet.map(str::to_string))])
+        Ok(vec![(base, plan.sheet.map(str::to_string))])
     }
 }
 
