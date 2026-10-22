@@ -28,6 +28,7 @@ tummler report.pdf png --page 2
 tummler table.xlsx csv --sheet 2
 tummler slides.pptx pdf                 # soffice if already on PATH
 tummler backup.zip tar.gz
+tummler video.mkv mp4 --strip-meta
 ```
 
 Format last. That’s the whole trick.
@@ -66,7 +67,7 @@ cargo install --git https://github.com/RUdolf1517/tummler
 
 macOS (Apple Silicon and Intel) and Linux, x86_64 and ARM.
 
-ffmpeg (video/HEIC), pandoc (documents), poppler (PDF → png/docx) — tummler offers to install them in a TTY. LibreOffice (`soffice`) is used only if already on PATH. Never asked for, never installed.
+ffmpeg (video/HEIC), pandoc (documents), poppler (PDF → png/docx) — tummler offers to install them in a TTY (`tummler --check-deps`, or the first conversion that needs them). LibreOffice (`soffice`) is used only if already on PATH. Never asked for, never installed.
 
 <details>
 <summary>From source</summary>
@@ -120,6 +121,7 @@ tummler icon.svg png
 tummler video.mkv mp4                      # remux (`-c copy`) if codecs fit
 tummler video.mp4 webm -q 80               # CRF ~22, not x264 “slow”
 tummler video.mp4 mp3 -q 85                # bitrate
+tummler video.mkv mp4 --strip-meta         # drop container tags (GPS/author)
 ```
 
 JPEG `--max` / `--resize` decodes at 1/2, 1/4 or 1/8 (DCT) when that still covers the target.
@@ -197,6 +199,7 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --max <PX>            longest side (images/video)
       --resize <SPEC>       50% | 800x | x600 | 800x600
       --page <N>            PDF page (1-based; default: all pages in one image)
+      --strip-meta          drop EXIF/GPS/author (ffmpeg; pandoc title/author/date)
       --sheet <NAME|N>      spreadsheet sheet (name, 1-based index, or *)
       --all-sheets          every sheet → table-Sheet1.csv
   -j, --jobs <N>            parallel jobs (0 = CPUs)
@@ -207,7 +210,7 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --no-color
   -i, --info                about
       --list-formats
-      --check-deps
+      --check-deps          status; TTY offers to install ffmpeg/pandoc/poppler
       --no-auto-install
   -y, --yes                 install deps without asking
       --ffmpeg-args <ARGS>

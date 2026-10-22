@@ -101,6 +101,15 @@ Longest side in pixels (images/video). Never upscales.
 .BI \-\-page " N
 PDF page (1-based). Default: all pages stacked in one image.
 .TP
+.B \-\-strip\-meta
+Drop EXIF/GPS and author tags.
+ffmpeg uses
+.B \-map_metadata \-1
+(including remux).
+pandoc clears title/author/date.
+Images already drop EXIF on convert.
+LibreOffice and a PDF copy are unchanged.
+.TP
 .BR \-j ", " \-\-jobs =\fIN
 Parallel jobs. 0 means the number of CPUs (media capped at 2).
 .TP
@@ -128,6 +137,9 @@ Supported formats.
 .TP
 .B \-\-check\-deps
 Status of ffmpeg, pandoc, poppler, soffice.
+In a TTY, offer to install ffmpeg/pandoc/poppler (never LibreOffice).
+.B \-y
+installs without asking.
 .TP
 .B \-\-no\-auto\-install
 Do not offer to install missing tools.
@@ -189,6 +201,10 @@ tummler report.pdf png
 tummler report.pdf png \-\-page 2
 .TQ
 tummler report.pdf docx
+.TQ
+tummler video.mkv mp4 \-\-strip\-meta
+.TQ
+tummler \-\-check\-deps
 .TQ
 tummler slides.pptx pdf
 .TQ

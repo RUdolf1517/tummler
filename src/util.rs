@@ -727,6 +727,7 @@ mod tests {
         assert!(man.contains("pdftoppm"));
         assert!(man.contains("brew trust"));
         assert!(man.contains("RUdolf1517/tummler/tummler"));
+        assert!(man.contains("strip-meta") || man.contains("strip\\-meta"));
     }
 
     #[test]

@@ -29,6 +29,8 @@ pub struct ConvertOpts<'a> {
     pub ffmpeg_threads: usize,
     /// PDF page (1-based). `None` = all pages stacked into one image.
     pub page: Option<u32>,
+    /// Drop EXIF/GPS/author tags where the engine supports it.
+    pub strip_meta: bool,
 }
 
 /// Check external dependencies once before a parallel batch.
@@ -174,6 +176,7 @@ pub fn convert_file(
             opts.assume_yes,
             opts.geometry,
             opts.ffmpeg_threads,
+            opts.strip_meta,
         )
     };
 
@@ -230,7 +233,13 @@ pub fn convert_file(
             }
             FormatKind::Media => via_ffmpeg(),
             FormatKind::Document => {
-                document::convert_document(input, &staging, opts.no_auto_install, opts.assume_yes)
+                document::convert_document(
+                    input,
+                    &staging,
+                    opts.no_auto_install,
+                    opts.assume_yes,
+                    opts.strip_meta,
+                )
             }
             FormatKind::Archive => archive::convert_archive(input, &staging),
             FormatKind::Spreadsheet | FormatKind::Unknown => {

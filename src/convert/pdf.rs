@@ -6,7 +6,7 @@ use crate::util::{classify_ext, is_ffmpeg_image, is_pdf, normalize_ext, FormatKi
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{image, media, soffice, ConvertOpts};
+use super::{document, image, media, soffice, ConvertOpts};
 
 /// Writer-ish targets we can fill from extracted PDF text (and soffice for a few).
 pub(crate) fn is_pdf_doc_target(ext: &str) -> bool {
@@ -110,6 +110,7 @@ fn emit_raster(
             opts.assume_yes,
             geometry,
             opts.ffmpeg_threads,
+            opts.strip_meta,
         );
     }
     image::convert_image(raster, output, opts.quality, geometry)
@@ -343,6 +344,9 @@ fn pandoc_plain(
     cmd.args(["-f", "plain", "-t", &to, "-o"])
         .arg(output)
         .arg(input_txt);
+    for a in document::pandoc_strip_args(opts.strip_meta) {
+        cmd.arg(a);
+    }
     let result = interrupt::run(&mut cmd)
         .map_err(|e| TummlerError::DocumentError(e.to_string()))?;
     if !result.status.success() {
@@ -431,6 +435,7 @@ mod tests {
             sheet: None,
             ffmpeg_threads: 0,
             page: None,
+            strip_meta: false,
         }
     }
 

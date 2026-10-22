@@ -51,10 +51,31 @@ pub fn can_try_stream_copy(
     (is_video_ext(&src) || is_audio_ext(&src)) && (is_video_ext(&dst) || is_audio_ext(&dst))
 }
 
-fn ffmpeg_copy(input: &Path, output: &Path) -> bool {
+/// ffmpeg `-map_metadata -1` unless the user already set `-map_metadata`.
+pub(crate) fn strip_meta_args(
+    strip_meta: bool,
+    ffmpeg_args: Option<&str>,
+) -> &'static [&'static str] {
+    const ARGS: &[&str] = &["-map_metadata", "-1"];
+    if !strip_meta {
+        return &[];
+    }
+    if ffmpeg_args.is_some_and(|s| {
+        s.split_whitespace()
+            .any(|a| a == "-map_metadata" || a.starts_with("-map_metadata:"))
+    }) {
+        return &[];
+    }
+    ARGS
+}
+
+fn ffmpeg_copy(input: &Path, output: &Path, strip_meta: bool) -> bool {
     let mut cmd = Command::new("ffmpeg");
     cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"]);
     cmd.arg("-i").arg(input);
+    for a in strip_meta_args(strip_meta, None) {
+        cmd.arg(a);
+    }
     cmd.args(["-c", "copy"]);
     cmd.arg(output);
     let ok = interrupt::run(&mut cmd)
@@ -77,6 +98,7 @@ pub fn convert_media(
     assume_yes: bool,
     geometry: &Geometry,
     ffmpeg_threads: usize,
+    strip_meta: bool,
 ) -> Result<(), TummlerError> {
     deps::ensure_available("ffmpeg", no_auto_install, assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("ffmpeg".into(), e))?;
@@ -88,7 +110,7 @@ pub fn convert_media(
         .map(normalize_ext)
         .unwrap_or_default();
     if can_try_stream_copy(&in_ext, &out_ext, quality, geometry, ffmpeg_args)
-        && ffmpeg_copy(input, output)
+        && ffmpeg_copy(input, output, strip_meta)
     {
         return Ok(());
     }
@@ -152,6 +174,10 @@ pub fn convert_media(
                 cmd.arg("-q:v").arg(q.to_string());
             }
         }
+    }
+
+    for a in strip_meta_args(strip_meta, ffmpeg_args) {
+        cmd.arg(a);
     }
 
     if let Some(extra) = ffmpeg_args {
@@ -298,5 +324,20 @@ mod tests {
             &g,
             Some("-an")
         ));
+    }
+
+    #[test]
+    fn strip_meta_args_skips_when_user_mapped() {
+        assert!(strip_meta_args(false, None).is_empty());
+        assert_eq!(
+            strip_meta_args(true, None),
+            ["-map_metadata", "-1"].as_slice()
+        );
+        assert!(strip_meta_args(true, Some("-map_metadata 0")).is_empty());
+        assert!(strip_meta_args(true, Some("-map_metadata:s:0 0")).is_empty());
+        assert_eq!(
+            strip_meta_args(true, Some("-an")),
+            ["-map_metadata", "-1"].as_slice()
+        );
     }
 }
