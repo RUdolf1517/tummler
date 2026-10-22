@@ -59,6 +59,24 @@ brew trust --formula RUdolf1517/tummler/tummler
 brew install tummler
 ```
 
+**apt** (Debian/Ubuntu, no Rust):
+
+```bash
+curl -fsSL -o tummler_amd64.deb https://github.com/RUdolf1517/tummler/releases/latest/download/tummler_amd64.deb
+sudo apt install ./tummler_amd64.deb
+```
+
+ARM: `tummler_arm64.deb`.
+
+**dnf** (Fedora, no Rust):
+
+```bash
+curl -fsSL -o tummler.x86_64.rpm https://github.com/RUdolf1517/tummler/releases/latest/download/tummler.x86_64.rpm
+sudo dnf install ./tummler.x86_64.rpm
+```
+
+ARM: `tummler.aarch64.rpm`.
+
 **Cargo** ([Rust 1.99+](https://rustup.rs)):
 
 ```bash

@@ -63,6 +63,28 @@ unless you accept every current and future formula in the tap.
 Intel Mac is bottled (
 .B tummler-x86_64-apple-darwin.tar.gz
 ).
+.PP
+Debian/Ubuntu (
+.BR apt ):
+.PP
+.RS
+curl \\-fsSL \\-o tummler_amd64.deb https://github.com/RUdolf1517/tummler/releases/latest/download/tummler_amd64.deb
+.br
+sudo apt install ./tummler_amd64.deb
+.RE
+.PP
+Fedora (
+.BR dnf ):
+.PP
+.RS
+curl \\-fsSL \\-o tummler.x86_64.rpm https://github.com/RUdolf1517/tummler/releases/latest/download/tummler.x86_64.rpm
+.br
+sudo dnf install ./tummler.x86_64.rpm
+.RE
+.PP
+ARM assets:
+.BR tummler_arm64.deb ,
+.BR tummler.aarch64.rpm .
 .SH OPTIONS
 .TP
 .BI \-f " EXT" "\fR, \fB\-\-format=" EXT

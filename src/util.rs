@@ -836,6 +836,8 @@ mod tests {
         assert!(man.contains("suffix"));
         assert!(man.contains("symbolic links") || man.contains("symlinks"));
         assert!(man.contains("timeout"));
+        assert!(man.contains("apt"));
+        assert!(man.contains("dnf"));
     }
 
     #[test]

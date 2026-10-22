@@ -50,9 +50,10 @@ pub fn install_hint(bin: &str) -> String {
             "Website:".bold()
         ),
         "pandoc" => format!(
-            "Install pandoc:\n  {}  brew install pandoc\n  {}  sudo apt install pandoc\n  {}  https://pandoc.org/installing.html",
+            "Install pandoc:\n  {}  brew install pandoc\n  {}  sudo apt install pandoc\n  {}  sudo dnf install pandoc\n  {}  https://pandoc.org/installing.html",
             "macOS:".bold(),
             "Debian/Ubuntu:".bold(),
+            "Fedora:".bold(),
             "Website:".bold()
         ),
         "pdftoppm" | "pdftotext" => format!(
@@ -158,12 +159,15 @@ fn detect_install_command(bin: &str) -> Option<String> {
 
     #[cfg(target_os = "linux")]
     {
-        if which::which("brew").is_ok() {
-            return Some(format!("brew install {}", pkg_name(bin, true, false)));
-        }
+        // Native repos first so linuxbrew does not shadow apt/dnf.
         if which::which("apt").is_ok() || which::which("apt-get").is_ok() {
+            let apt = if which::which("apt").is_ok() {
+                "apt"
+            } else {
+                "apt-get"
+            };
             return Some(format!(
-                "sudo apt update && sudo apt install -y {}",
+                "sudo {apt} update && sudo {apt} install -y {}",
                 pkg_name(bin, false, false)
             ));
         }
@@ -184,6 +188,9 @@ fn detect_install_command(bin: &str) -> Option<String> {
                 "sudo zypper install -y {}",
                 pkg_name(bin, false, false)
             ));
+        }
+        if which::which("brew").is_ok() {
+            return Some(format!("brew install {}", pkg_name(bin, true, false)));
         }
         None
     }
@@ -327,6 +334,15 @@ mod tests {
         assert!(!AUTO_BINS.contains(&"soffice"));
         assert!(!AUTO_BINS.contains(&"libreoffice"));
         assert_eq!(AUTO_BINS[0], "ffmpeg");
+    }
+
+    #[test]
+    fn poppler_pkg_name_apt_dnf_vs_brew() {
+        assert_eq!(pkg_name("pdftoppm", false, false), "poppler-utils");
+        assert_eq!(pkg_name("pdftotext", false, false), "poppler-utils");
+        assert_eq!(pkg_name("pdftoppm", true, false), "poppler");
+        assert_eq!(pkg_name("ffmpeg", false, false), "ffmpeg");
+        assert_eq!(pkg_name("pandoc", false, false), "pandoc");
     }
 
     #[test]

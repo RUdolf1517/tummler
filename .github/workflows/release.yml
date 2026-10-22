@@ -88,6 +88,9 @@ jobs:
           merge-multiple: true
         continue-on-error: true
 
+      - name: Linux .deb / .rpm
+        run: bash packaging/linux-packages.sh "${GITHUB_REF_NAME#v}" dist man/tummler.1
+
       - name: Hashes
         run: |
           mkdir -p dist
@@ -95,7 +98,10 @@ jobs:
             echo "### SHA-256"
             echo
             echo '```'
-            (cd dist && sha256sum *.tar.gz 2>/dev/null) || true
+            (cd dist && for f in *.tar.gz *.deb *.rpm; do
+              [ -f "$f" ] || continue
+              sha256sum -- "$f"
+            done)
             echo '```'
           } | tee hashes.md
 

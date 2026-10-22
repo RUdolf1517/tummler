@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Linux packages: `.deb` (apt) and `.rpm` (dnf) on GitHub Releases (`tummler_amd64.deb`, `tummler.x86_64.rpm`, ARM too)
+- Auto-install ffmpeg/pandoc/poppler on Linux: apt/dnf before linuxbrew
 - Homebrew: 0.3.4 bottles
 
 ## 0.3.4 — 2026-10-22
