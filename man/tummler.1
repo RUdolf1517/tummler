@@ -82,6 +82,22 @@ Replace existing files.
 .BR \-r ", " \-\-recursive
 Walk directories.
 .TP
+.B \-\-preserve\-structure
+With
+.B \-r
+and
+.B \-o
+directory, keep subdirectories:
+.I photos/vacation/photo.jpg
+→
+.I out/vacation/photo.webp .
+Default flattens to the output directory.
+Ignored without
+.B \-r
+and an
+.B \-o
+directory.
+.TP
 .BI \-\-include " GLOB
 Keep matching files (repeatable). Matches name or path.
 .TP
@@ -194,6 +210,8 @@ tummler icon.svg png
 tummler photo.heic jpg \-\-max 1920
 .TQ
 tummler ./photos webp \-r \-\-skip\-newer \-o ./out
+.TQ
+tummler ./photos webp \-r \-o ./out \-\-preserve\-structure
 .TQ
 tummler photo.png jpg \-\-preserve\-mtime
 .TQ

@@ -102,6 +102,7 @@ cat in.png | tummler - jpeg > out.jpeg     # unix filter
 tummler a.png b.jpg c.bmp webp -o ./converted/
 tummler ./photos avif --overwrite
 tummler ./photos webp -r -o ./out -j 8
+tummler ./photos webp -r -o ./out --preserve-structure   # keep vacation/, birthday/
 tummler ./photos jpeg -r -n                # dry-run
 tummler ./photos webp -r --include '*.png' --exclude '*_raw*' --skip-newer -o ./out
 ```
@@ -194,6 +195,7 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
   -q, --quality <1-100>     lossy quality
       --overwrite, --force  replace existing files
   -r, --recursive           walk directories
+      --preserve-structure  keep subdirs under -o (needs -r). Default flattens
       --include <GLOB>      keep matching files (repeatable)
       --exclude <GLOB>      drop matching files (repeatable)
       --skip-newer          skip if output is up to date

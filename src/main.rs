@@ -153,6 +153,18 @@ fn run(mut cli: cli::Cli) -> i32 {
     }
 
     let multiple = valid_inputs.len() > 1;
+    let preserve_structure = cli.preserve_structure
+        && cli.recursive
+        && cli.output.as_deref().is_some_and(|p| {
+            !util::is_stdio(p) && output_is_directory_hint(p, multiple)
+        });
+    if cli.preserve_structure && !preserve_structure {
+        if !cli.recursive {
+            ui::warn("--preserve-structure ignored without -r");
+        } else {
+            ui::warn("--preserve-structure ignored without -o directory");
+        }
+    }
     let stdout_mode = cli.output.as_deref().is_some_and(util::is_stdio)
         || (valid_inputs.len() == 1 && util::is_stdio(&valid_inputs[0]) && cli.output.is_none());
 
@@ -221,6 +233,7 @@ fn run(mut cli: cli::Cli) -> i32 {
                 multiple,
                 split_sheets,
                 sheet_name,
+                output_structure_root(preserve_structure, input, &cli.inputs),
             ) {
                 Ok(p) => p,
                 Err(e) => {
@@ -266,6 +279,7 @@ fn run(mut cli: cli::Cli) -> i32 {
             multiple,
             split_sheets,
             sheet_name,
+            output_structure_root(preserve_structure, input, &cli.inputs),
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -501,6 +515,18 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
     }
 }
 
+fn output_structure_root<'a>(
+    preserve: bool,
+    file: &'a Path,
+    originals: &'a [PathBuf],
+) -> Option<&'a Path> {
+    if preserve {
+        util::structure_root_for(file, originals)
+    } else {
+        None
+    }
+}
+
 fn wants_all_sheets(cli: &cli::Cli) -> bool {
     cli.all_sheets || cli.sheet.as_deref() == Some("*")
 }
@@ -519,8 +545,15 @@ fn expand_outputs(
     multiple_inputs: bool,
     all_sheets: bool,
     sheet: Option<&str>,
+    structure_root: Option<&Path>,
 ) -> Result<Vec<(PathBuf, Option<String>)>, String> {
-    let base = util::resolve_output_path(input, target_ext, output_arg, multiple_inputs)?;
+    let base = util::resolve_output_path(
+        input,
+        target_ext,
+        output_arg,
+        multiple_inputs,
+        structure_root,
+    )?;
     let is_sheet = util::classify_ext(&util::get_extension(input).unwrap_or_default())
         == util::FormatKind::Spreadsheet;
     if all_sheets && is_sheet {
@@ -587,7 +620,7 @@ fn run_stdio(
             }
         }
     } else {
-        match util::resolve_output_path(input, target_ext, cli.output.as_deref(), false) {
+        match util::resolve_output_path(input, target_ext, cli.output.as_deref(), false, None) {
             Ok(p) => p,
             Err(e) => {
                 ui::error(format!("{}: {e}", input.display()));

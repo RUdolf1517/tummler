@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `--preserve-mtime`: copy the input's modification time onto the output (like `cp -p`)
+- `--preserve-structure`: with `-r -o DIR`, keep `vacation/photo.jpg` → `DIR/vacation/photo.webp` (default still flattens)
 - ffmpeg/pandoc/poppler failures: one-line `hint:` for known stderr (LaTeX, missing codec, corrupt input, …); raw log kept
 - Homebrew: 0.3.3 bottles
 

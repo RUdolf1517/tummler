@@ -13,6 +13,7 @@ Examples:
   cat in.png | tummler - jpeg > out.jpeg
   tummler -- -file.png jpeg
   tummler ./photos webp -r --include '*.png' --skip-newer
+  tummler ./photos webp -r -o ./out --preserve-structure
   tummler photo.png jpg --preserve-mtime
   tummler photo.heic jpg --max 1920
   tummler table.xlsx csv
@@ -84,6 +85,10 @@ pub struct Cli {
     /// Recurse into directories
     #[arg(short = 'r', long = "recursive")]
     pub recursive: bool,
+
+    /// Keep subdirectories under -o (with -r). Default flattens to the output dir
+    #[arg(long = "preserve-structure")]
+    pub preserve_structure: bool,
 
     /// Include only files matching GLOB (repeatable). Matches name or path.
     #[arg(long = "include", value_name = "GLOB", action = clap::ArgAction::Append)]
@@ -204,5 +209,18 @@ mod tests {
         let c = Cli::try_parse_from(["tummler", "--preserve-mtime", "a.png", "jpg"]).unwrap();
         assert!(c.preserve_mtime);
         assert!(!c.skip_newer);
+
+        let c = Cli::try_parse_from([
+            "tummler",
+            "--preserve-structure",
+            "-r",
+            "-o",
+            "./out",
+            "./photos",
+            "webp",
+        ])
+        .unwrap();
+        assert!(c.preserve_structure);
+        assert!(c.recursive);
     }
 }
