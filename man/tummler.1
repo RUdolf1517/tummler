@@ -91,6 +91,11 @@ Drop matching files (repeatable).
 .B \-\-skip\-newer
 Skip if the output exists and is not older than the input.
 .TP
+.B \-\-preserve\-mtime
+Copy the input modification time onto the output (like
+.BR cp " " \-p ).
+Ignored for stdin/stdout.
+.TP
 .BI \-\-max " PX
 Longest side in pixels (images/video). Never upscales.
 .TP
@@ -189,6 +194,8 @@ tummler icon.svg png
 tummler photo.heic jpg \-\-max 1920
 .TQ
 tummler ./photos webp \-r \-\-skip\-newer \-o ./out
+.TQ
+tummler photo.png jpg \-\-preserve\-mtime
 .TQ
 tummler table.xlsx csv
 .TQ

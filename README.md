@@ -177,6 +177,7 @@ tummler deck.odp pptx          # needs soffice already installed
 tummler img.png jpeg                       # error if img.jpeg exists
 tummler img.png jpeg --overwrite
 tummler ./photos webp -r --skip-newer      # folders: skip what’s already done
+tummler photo.png jpg --preserve-mtime     # output mtime = input (cp -p)
 ```
 
 <details>
@@ -196,6 +197,7 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --include <GLOB>      keep matching files (repeatable)
       --exclude <GLOB>      drop matching files (repeatable)
       --skip-newer          skip if output is up to date
+      --preserve-mtime      copy input mtime onto the output (like cp -p)
       --max <PX>            longest side (images/video)
       --resize <SPEC>       50% | 800x | x600 | 800x600
       --page <N>            PDF page (1-based; default: all pages in one image)

@@ -305,6 +305,7 @@ fn run(mut cli: cli::Cli) -> i32 {
     let quality = cli.quality;
     let overwrite = cli.overwrite;
     let skip_newer = cli.skip_newer;
+    let preserve_mtime = cli.preserve_mtime;
     let no_auto = cli.no_auto_install;
     let yes = cli.yes;
     let verbose = cli.verbose;
@@ -321,6 +322,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         quality,
         overwrite,
         skip_newer,
+        preserve_mtime,
         ffmpeg_args: ffmpeg_args.as_deref(),
         no_auto,
         yes,
@@ -452,6 +454,7 @@ struct JobSpec<'a> {
     quality: Option<u8>,
     overwrite: bool,
     skip_newer: bool,
+    preserve_mtime: bool,
     ffmpeg_args: Option<&'a str>,
     no_auto: bool,
     yes: bool,
@@ -482,10 +485,17 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
         strip_meta: spec.strip_meta,
     };
     match convert::convert_file(&t.input, &t.output, spec.target_ext, &opts) {
-        Ok(()) => TaskResult::Ok {
-            bin,
-            bout: util::file_size(&t.output),
-        },
+        Ok(()) => {
+            if spec.preserve_mtime
+                && let Err(e) = util::copy_mtime(&t.input, &t.output)
+            {
+                ui::warn(format!("{}: could not preserve mtime: {e}", t.label_out));
+            }
+            TaskResult::Ok {
+                bin,
+                bout: util::file_size(&t.output),
+            }
+        }
         Err(e) => TaskResult::Err(e.to_string()),
     }
 }
@@ -624,6 +634,13 @@ fn run_stdio(
 
     match convert::convert_file(&input_path, &output, target_ext, &opts) {
         Ok(()) => {
+            if cli.preserve_mtime
+                && !stdout_mode
+                && !util::is_stdio(input)
+                && let Err(e) = util::copy_mtime(&input_path, &output)
+            {
+                ui::warn(format!("{label_out}: could not preserve mtime: {e}"));
+            }
             if stdout_mode && let Err(e) = emit_stdout(&output) {
                 ui::finish_clear(spin.as_ref());
                 ui::error(format!("failed to write stdout: {e}"));

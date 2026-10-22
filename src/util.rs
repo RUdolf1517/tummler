@@ -118,6 +118,15 @@ pub fn is_staging_name(path: &Path) -> bool {
         .is_some_and(|n| n.starts_with(".tummler-tmp-"))
 }
 
+/// Copy `from`'s modification time onto `to`. Mode/atime unchanged.
+pub fn copy_mtime(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mtime = from.metadata()?.modified()?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(to)?
+        .set_modified(mtime)
+}
+
 pub fn output_up_to_date(input: &Path, output: &Path) -> bool {
     let Ok(out_m) = output.metadata() else {
         return false;
@@ -728,6 +737,7 @@ mod tests {
         assert!(man.contains("brew trust"));
         assert!(man.contains("RUdolf1517/tummler/tummler"));
         assert!(man.contains("strip-meta") || man.contains("strip\\-meta"));
+        assert!(man.contains("preserve-mtime") || man.contains("preserve\\-mtime"));
     }
 
     #[test]
@@ -891,5 +901,26 @@ mod tests {
         assert!(output_up_to_date(&a, &b));
         assert!(!output_up_to_date(&b, &a));
         assert!(!output_up_to_date(&a, Path::new("/no/such/file")));
+    }
+
+    #[test]
+    fn copy_mtime_matches_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.bin");
+        let dst = dir.path().join("dst.bin");
+        std::fs::write(&src, b"in").unwrap();
+        std::fs::write(&dst, b"out").unwrap();
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(120);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&src)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+        copy_mtime(&src, &dst).unwrap();
+        let got = dst.metadata().unwrap().modified().unwrap();
+        let want = src.metadata().unwrap().modified().unwrap();
+        assert_eq!(got, want);
+        assert!(output_up_to_date(&src, &dst));
     }
 }

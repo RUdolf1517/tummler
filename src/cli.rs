@@ -13,6 +13,7 @@ Examples:
   cat in.png | tummler - jpeg > out.jpeg
   tummler -- -file.png jpeg
   tummler ./photos webp -r --include '*.png' --skip-newer
+  tummler photo.png jpg --preserve-mtime
   tummler photo.heic jpg --max 1920
   tummler table.xlsx csv
   tummler table.csv xlsx
@@ -95,6 +96,10 @@ pub struct Cli {
     /// Skip if the output exists and is newer than (or as new as) the input
     #[arg(long = "skip-newer")]
     pub skip_newer: bool,
+
+    /// Copy the input's modification time onto the output (like cp -p)
+    #[arg(long = "preserve-mtime")]
+    pub preserve_mtime: bool,
 
     /// Longest side in pixels (images/video; keep aspect, never upscale)
     #[arg(long = "max", value_name = "PX", value_parser = clap::value_parser!(u32).range(1..))]
@@ -195,5 +200,9 @@ mod tests {
         let c = Cli::try_parse_from(["tummler", "--check-deps", "-y"]).unwrap();
         assert!(c.check_deps);
         assert!(c.yes);
+
+        let c = Cli::try_parse_from(["tummler", "--preserve-mtime", "a.png", "jpg"]).unwrap();
+        assert!(c.preserve_mtime);
+        assert!(!c.skip_newer);
     }
 }
