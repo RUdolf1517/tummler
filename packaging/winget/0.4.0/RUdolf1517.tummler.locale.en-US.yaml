@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+PackageIdentifier: RUdolf1517.tummler
+PackageVersion: 0.4.0
+PackageLocale: en-US
+Publisher: RUdolf1517
+PublisherUrl: https://github.com/RUdolf1517
+PublisherSupportUrl: https://github.com/RUdolf1517/tummler/issues
+Author: RUdolf1517
+PackageName: tummler
+PackageUrl: https://github.com/RUdolf1517/tummler
+License: MIT
+LicenseUrl: https://github.com/RUdolf1517/tummler/blob/main/LICENSE
+Copyright: Copyright (c) 2026 RUdolf1517
+ShortDescription: One CLI that mixes any file into any format
+Description: Converts images, audio, video, documents, spreadsheets and archives. Format last — tummler photo.png jpg. Windows x64 only (not ARM).
+Moniker: tummler
+Tags:
+  - cli
+  - converter
+  - ffmpeg
+  - image
+  - rust
+  - transcode
+ReleaseNotesUrl: https://github.com/RUdolf1517/tummler/releases/tag/v0.4.0
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0

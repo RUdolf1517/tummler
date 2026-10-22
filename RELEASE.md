@@ -11,7 +11,7 @@ git tag v0.4.0
 git push origin v0.4.0
 ```
 
-Actions builds Apple Silicon, Intel Mac (`x86_64-apple-darwin`), Linux x86_64, Linux ARM tarballs, Windows x64 zip (`tummler-x86_64-pc-windows-msvc.zip`, no ARM), plus `.deb` / `.rpm`, and attaches them to the release. After the tag, copy the Intel Mac SHA-256 into `Formula/tummler.rb` (`on_macos` / `on_intel`). Winget id: `RUdolf1517.tummler` (submit the zip to microsoft/winget-pkgs after the release exists).
+Actions builds Apple Silicon, Intel Mac (`x86_64-apple-darwin`), Linux x86_64, Linux ARM tarballs, Windows x64 zip (`tummler-x86_64-pc-windows-msvc.zip`, no ARM), plus `.deb` / `.rpm`, and attaches them to the release. After the tag, copy the Intel Mac SHA-256 into `Formula/tummler.rb` (`on_macos` / `on_intel`). Winget id: `RUdolf1517.tummler`. After the zip exists, copy `packaging/winget/<version>/` into `microsoft/winget-pkgs` as `manifests/r/RUdolf1517/tummler/<version>/` and open a PR there (this token cannot fork winget-pkgs).
 
 Then this works:
 
