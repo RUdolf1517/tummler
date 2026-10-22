@@ -57,24 +57,27 @@ pub fn require_soffice() -> Result<PathBuf, String> {
 pub fn install_hint(bin: &str) -> String {
     match bin {
         "ffmpeg" => format!(
-            "Install ffmpeg:\n  {}  winget install -e --id Gyan.FFmpeg\n  {}  brew install ffmpeg\n  {}  sudo apt install ffmpeg\n  {}  sudo dnf install ffmpeg\n  {}  https://ffmpeg.org/download.html",
+            "Install ffmpeg:\n  {}  winget install -e --id {}\n  {}  brew install ffmpeg\n  {}  sudo apt install ffmpeg\n  {}  sudo dnf install ffmpeg\n  {}  https://ffmpeg.org/download.html",
             "Windows:".bold(),
+            winget_id("ffmpeg").unwrap(),
             "macOS:".bold(),
             "Debian/Ubuntu:".bold(),
             "Fedora:".bold(),
             "Website:".bold()
         ),
         "pandoc" => format!(
-            "Install pandoc:\n  {}  winget install -e --id JohnMacFarlane.Pandoc\n  {}  brew install pandoc\n  {}  sudo apt install pandoc\n  {}  sudo dnf install pandoc\n  {}  https://pandoc.org/installing.html",
+            "Install pandoc:\n  {}  winget install -e --id {}\n  {}  brew install pandoc\n  {}  sudo apt install pandoc\n  {}  sudo dnf install pandoc\n  {}  https://pandoc.org/installing.html",
             "Windows:".bold(),
+            winget_id("pandoc").unwrap(),
             "macOS:".bold(),
             "Debian/Ubuntu:".bold(),
             "Fedora:".bold(),
             "Website:".bold()
         ),
         "pdftoppm" | "pdftotext" => format!(
-            "Install poppler ({bin}):\n  {}  winget install -e --id oschwartz10612.Poppler\n  {}  brew install poppler\n  {}  sudo apt install poppler-utils\n  {}  sudo dnf install poppler-utils\n  {}  https://poppler.freedesktop.org/",
+            "Install poppler ({bin}):\n  {}  winget install -e --id {}\n  {}  brew install poppler\n  {}  sudo apt install poppler-utils\n  {}  sudo dnf install poppler-utils\n  {}  https://poppler.freedesktop.org/",
             "Windows:".bold(),
+            winget_id(bin).unwrap(),
             "macOS:".bold(),
             "Debian/Ubuntu:".bold(),
             "Fedora:".bold(),
