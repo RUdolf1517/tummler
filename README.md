@@ -77,13 +77,22 @@ sudo dnf install ./tummler.x86_64.rpm
 
 ARM: `tummler.aarch64.rpm`.
 
-**winget** (Windows x64 only, no ARM):
+**winget** (Windows x64 only, no ARM). Until the package is in the community source, install from this GitHub repo — winget downloads `tummler-x86_64-pc-windows-msvc.zip` from Releases:
+
+```powershell
+git clone https://github.com/RUdolf1517/tummler
+cd tummler
+winget settings --enable LocalManifestFiles
+winget install --manifest .\packaging\winget\0.4.0
+```
+
+`LocalManifestFiles` is once, as Administrator. After microsoft/winget-pkgs accepts the package:
 
 ```powershell
 winget install -e --id RUdolf1517.tummler
 ```
 
-If the package is not in the community source yet, use the GitHub zip: `tummler-x86_64-pc-windows-msvc.zip`.
+Zip only (no winget): [Releases](https://github.com/RUdolf1517/tummler/releases/latest) → `tummler-x86_64-pc-windows-msvc.zip`, put `tummler.exe` on PATH.
 
 **Cargo** ([Rust 1.99+](https://rustup.rs)):
 
