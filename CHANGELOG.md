@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Homebrew: 0.3.4 bottles
+
 ## 0.3.4 — 2026-10-22
 
 - `--preserve-mtime`: copy the input's modification time onto the output (like `cp -p`)
