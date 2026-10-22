@@ -58,3 +58,19 @@ jobs:
           for ln in hits[-60:]:
               print("::error::" + ln)
           PY
+
+  # x86_64 only. No Windows ARM.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --color=always
+      - name: cargo clippy
+        run: cargo clippy --all-targets --color=always -- -D warnings

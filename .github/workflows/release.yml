@@ -35,6 +35,10 @@ jobs:
           - os: macos-latest
             target: x86_64-apple-darwin
             archive: tummler-x86_64-apple-darwin.tar.gz
+          # Windows x64 only. No ARM.
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: tummler-x86_64-pc-windows-msvc.zip
 
     steps:
       - uses: actions/checkout@v5
@@ -61,10 +65,21 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Archive
+        if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../${{ matrix.archive }} tummler
           shasum -a 256 ../../../${{ matrix.archive }} | tee ../../../${{ matrix.archive }}.sha256
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = "target/${{ matrix.target }}/release/tummler.exe"
+          $out = "${{ matrix.archive }}"
+          Compress-Archive -Path $exe -DestinationPath $out -Force
+          $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+          "$hash  $out" | Tee-Object -FilePath "$out.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -98,7 +113,7 @@ jobs:
             echo "### SHA-256"
             echo
             echo '```'
-            (cd dist && for f in *.tar.gz *.deb *.rpm; do
+            (cd dist && for f in *.tar.gz *.deb *.rpm *.zip; do
               [ -f "$f" ] || continue
               sha256sum -- "$f"
             done)

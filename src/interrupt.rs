@@ -47,9 +47,14 @@ fn kill_pid(pid: u32) {
         libc::kill(-p, libc::SIGKILL);
         libc::kill(p, libc::SIGKILL);
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        let _ = pid;
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
 }
 
@@ -163,27 +168,50 @@ fn wait_timeout(child: Child, wait_for: Duration, pid: u32) -> Result<Output, Tu
 mod tests {
     use super::*;
 
+    fn ok_cmd() -> Command {
+        #[cfg(windows)]
+        {
+            let mut cmd = Command::new("cmd");
+            cmd.args(["/C", "exit", "0"]);
+            cmd
+        }
+        #[cfg(not(windows))]
+        {
+            Command::new("true")
+        }
+    }
+
     #[test]
     fn timeout_kills_sleep() {
         let _d = begin_file(Some(1));
-        let mut cmd = Command::new("sleep");
-        cmd.arg("30");
+        #[cfg(windows)]
+        let mut cmd = {
+            let mut c = Command::new("ping");
+            c.args(["-n", "30", "127.0.0.1"]);
+            c
+        };
+        #[cfg(not(windows))]
+        let mut cmd = {
+            let mut c = Command::new("sleep");
+            c.arg("30");
+            c
+        };
         assert!(matches!(run(&mut cmd), Err(TummlerError::TimedOut(1))));
     }
 
     #[test]
     fn timeout_allows_fast_command() {
         let _d = begin_file(Some(5));
-        let mut cmd = Command::new("true");
-        let out = run(&mut cmd).expect("true");
+        let mut cmd = ok_cmd();
+        let out = run(&mut cmd).expect("ok cmd");
         assert!(out.status.success());
     }
 
     #[test]
     fn no_deadline_runs() {
         let _d = begin_file(None);
-        let mut cmd = Command::new("true");
-        let out = run(&mut cmd).expect("true");
+        let mut cmd = ok_cmd();
+        let out = run(&mut cmd).expect("ok cmd");
         assert!(out.status.success());
     }
 }

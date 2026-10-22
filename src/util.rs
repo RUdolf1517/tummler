@@ -838,6 +838,7 @@ mod tests {
         assert!(man.contains("timeout"));
         assert!(man.contains("apt"));
         assert!(man.contains("dnf"));
+        assert!(man.contains("winget"));
     }
 
     #[test]
