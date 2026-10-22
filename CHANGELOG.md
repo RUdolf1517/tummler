@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Homebrew: 0.3.3 bottles
+
 ## 0.3.3 — 2026-10-22
 
 - `--strip-meta`: ffmpeg `-map_metadata -1` (remux too); pandoc empty title/author/date. Images already drop EXIF on convert
