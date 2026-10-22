@@ -10,7 +10,7 @@ Images · audio · video · documents · spreadsheets · archives.
 [Install](#install) · [Usage](#usage) · [Formats](#formats) · [Name](#the-name)
 
 [![license](https://img.shields.io/badge/license-MIT-0b3d91?style=flat-square)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-111111?style=flat-square)](#install)
+[![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-111111?style=flat-square)](#install)
 [![rust](https://img.shields.io/badge/rust-1.99%2B-dea584?style=flat-square)](https://www.rust-lang.org/)
 
 </div>
@@ -59,15 +59,69 @@ brew trust --formula RUdolf1517/tummler/tummler
 brew install tummler
 ```
 
+**apt** (Debian/Ubuntu, no Rust):
+
+```bash
+curl -fsSL -o tummler_amd64.deb https://github.com/RUdolf1517/tummler/releases/latest/download/tummler_amd64.deb
+sudo apt install ./tummler_amd64.deb
+```
+
+ARM: `tummler_arm64.deb`.
+
+**dnf** (Fedora, no Rust):
+
+```bash
+curl -fsSL -o tummler.x86_64.rpm https://github.com/RUdolf1517/tummler/releases/latest/download/tummler.x86_64.rpm
+sudo dnf install ./tummler.x86_64.rpm
+```
+
+ARM: `tummler.aarch64.rpm`.
+
+**winget** (Windows x64 only, no ARM):
+
+```powershell
+winget install -e --id RUdolf1517.tummler
+```
+
+If the package is not in the community source yet, use the GitHub zip: `tummler-x86_64-pc-windows-msvc.zip`.
+
 **Cargo** ([Rust 1.99+](https://rustup.rs)):
 
 ```bash
 cargo install --git https://github.com/RUdolf1517/tummler
 ```
 
-macOS (Apple Silicon and Intel) and Linux, x86_64 and ARM.
+macOS (Apple Silicon and Intel), Linux (x86_64 and ARM), Windows x64 (not ARM).
 
-ffmpeg (video/HEIC), pandoc (documents), poppler (PDF → png/docx) — tummler offers to install them in a TTY (`tummler --check-deps`, or the first conversion that needs them). LibreOffice (`soffice`) is used only if already on PATH. Never asked for, never installed.
+### Dependencies
+
+Images, archives, spreadsheets: nothing extra.
+
+Optional tools — tummler offers to install them in a TTY (`tummler --check-deps`, or the first conversion that needs them). `-y` installs without asking. `--no-auto-install` skips the offer. Linux uses apt/dnf before linuxbrew. Windows uses winget.
+
+```bash
+# macOS
+brew install ffmpeg pandoc poppler
+
+# Debian/Ubuntu
+sudo apt install ffmpeg pandoc poppler-utils
+
+# Fedora
+sudo dnf install ffmpeg pandoc poppler-utils
+
+# Windows (x64)
+winget install -e --id Gyan.FFmpeg
+winget install -e --id JohnMacFarlane.Pandoc
+winget install -e --id oschwartz10612.Poppler
+
+tummler --check-deps
+```
+
+- **ffmpeg** — video, HEIC, AVIF, lossy webp
+- **pandoc** — documents
+- **poppler** (`pdftoppm` / `pdftotext`) — PDF → png/jpg/docx
+
+LibreOffice (`soffice`): slides, Word/ODT → pdf, PDF → docx layout. Used only if already on PATH. Never asked for, never installed.
 
 <details>
 <summary>From source</summary>

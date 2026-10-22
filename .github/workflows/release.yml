@@ -35,13 +35,27 @@ jobs:
           - os: macos-latest
             target: x86_64-apple-darwin
             archive: tummler-x86_64-apple-darwin.tar.gz
+          # Windows x64 only. No ARM.
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: tummler-x86_64-pc-windows-msvc.zip
 
     steps:
       - uses: actions/checkout@v5
 
       - name: System deps (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config liblzma-dev libbz2-dev
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          for i in 1 2 3; do
+            if sudo timeout 90 apt-get update \
+              && sudo timeout 120 apt-get install -y pkg-config liblzma-dev libbz2-dev; then
+              exit 0
+            fi
+            echo "apt attempt $i failed, retrying..."
+            sleep 10
+          done
+          exit 1
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -61,10 +75,21 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Archive
+        if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../${{ matrix.archive }} tummler
           shasum -a 256 ../../../${{ matrix.archive }} | tee ../../../${{ matrix.archive }}.sha256
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = "target/${{ matrix.target }}/release/tummler.exe"
+          $out = "${{ matrix.archive }}"
+          Compress-Archive -Path $exe -DestinationPath $out -Force
+          $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+          "$hash  $out" | Tee-Object -FilePath "$out.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -88,6 +113,9 @@ jobs:
           merge-multiple: true
         continue-on-error: true
 
+      - name: Linux .deb / .rpm
+        run: bash packaging/linux-packages.sh "${GITHUB_REF_NAME#v}" dist man/tummler.1
+
       - name: Hashes
         run: |
           mkdir -p dist
@@ -95,7 +123,10 @@ jobs:
             echo "### SHA-256"
             echo
             echo '```'
-            (cd dist && sha256sum *.tar.gz 2>/dev/null) || true
+            (cd dist && for f in *.tar.gz *.deb *.rpm *.zip; do
+              [ -f "$f" ] || continue
+              sha256sum -- "$f"
+            done)
             echo '```'
           } | tee hashes.md
 
@@ -110,11 +141,21 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: System deps
-        run: sudo apt-get update && sudo apt-get install -y pkg-config liblzma-dev libbz2-dev poppler-utils pandoc
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          for i in 1 2 3; do
+            if sudo timeout 90 apt-get update \
+              && sudo timeout 120 apt-get install -y pkg-config liblzma-dev libbz2-dev poppler-utils pandoc; then
+              exit 0
+            fi
+            echo "apt attempt $i failed, retrying..."
+            sleep 10
+          done
+          exit 1
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.1
