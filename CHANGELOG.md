@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `--strip-meta`: ffmpeg `-map_metadata -1` (remux too); pandoc empty title/author/date. Images already drop EXIF on convert
+- `--check-deps` in a TTY offers to install ffmpeg/pandoc/poppler (`-y` without asking). LibreOffice still never
 - Homebrew: 0.3.2 bottles, including Intel Mac (`x86_64-apple-darwin`)
 
 ## 0.3.2 — 2026-10-21

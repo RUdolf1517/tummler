@@ -60,7 +60,7 @@ fn run(mut cli: cli::Cli) -> i32 {
     }
 
     if cli.check_deps {
-        deps::check_all();
+        deps::check_all(cli.no_auto_install, cli.yes);
         return ui::EXIT_OK;
     }
 
@@ -328,6 +328,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         geometry: &geometry,
         ffmpeg_threads,
         page: cli.page,
+        strip_meta: cli.strip_meta,
     };
 
     let run_one = |t: &Task| {
@@ -458,6 +459,7 @@ struct JobSpec<'a> {
     geometry: &'a Geometry,
     ffmpeg_threads: usize,
     page: Option<u32>,
+    strip_meta: bool,
 }
 
 fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
@@ -477,6 +479,7 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
         sheet: t.sheet.as_deref(),
         ffmpeg_threads: spec.ffmpeg_threads,
         page: spec.page,
+        strip_meta: spec.strip_meta,
     };
     match convert::convert_file(&t.input, &t.output, spec.target_ext, &opts) {
         Ok(()) => TaskResult::Ok {
@@ -616,6 +619,7 @@ fn run_stdio(
         sheet: sheet.as_deref().filter(|s| *s != "*"),
         ffmpeg_threads: 0,
         page: cli.page,
+        strip_meta: cli.strip_meta,
     };
 
     match convert::convert_file(&input_path, &output, target_ext, &opts) {

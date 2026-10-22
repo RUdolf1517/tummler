@@ -83,6 +83,10 @@ pub fn prompt_auto_install(bin: &str, no_auto: bool) -> bool {
         return false;
     }
 
+    confirm_and_install(bin)
+}
+
+fn confirm_and_install(bin: &str) -> bool {
     let Some(cmd) = detect_install_command(bin) else {
         return false;
     };
@@ -213,8 +217,16 @@ pub fn ensure_available(bin: &str, no_auto: bool, assume_yes: bool) -> Result<()
     Err(format!("{bin} not found. {}", install_hint(bin)))
 }
 
-/// Print status of all dependencies.
-pub fn check_all() {
+/// Tools tummler may offer to install. LibreOffice is never in this list.
+const AUTO_BINS: &[&str] = &["ffmpeg", "pandoc", "pdftoppm", "pdftotext"];
+
+/// Print status of all dependencies. In a TTY, offer to install missing auto-deps.
+pub fn check_all(no_auto: bool, assume_yes: bool) {
+    print_dep_table();
+    offer_auto_deps(no_auto, assume_yes);
+}
+
+fn print_dep_table() {
     println!("{}", "tummler dependencies:".bold());
     println!();
 
@@ -262,4 +274,63 @@ pub fn check_all() {
 
     println!("  {} {}", "OS:".dimmed(), std::env::consts::OS);
     println!("  {} {}", "Arch:".dimmed(), std::env::consts::ARCH);
+}
+
+fn offer_auto_deps(no_auto: bool, assume_yes: bool) {
+    if no_auto {
+        return;
+    }
+    if AUTO_BINS.iter().all(|b| is_available(b)) {
+        return;
+    }
+    if assume_yes {
+        let mut any = false;
+        for bin in AUTO_BINS {
+            if is_available(bin) {
+                continue;
+            }
+            any |= try_install(bin);
+        }
+        if any {
+            println!();
+            print_dep_table();
+        }
+        return;
+    }
+    if !std::io::stdin().is_terminal() {
+        eprintln!(
+            "{}",
+            "Non-interactive mode — skipping auto-install.".dimmed()
+        );
+        return;
+    }
+    println!();
+    let mut any = false;
+    for bin in AUTO_BINS {
+        if is_available(bin) {
+            continue;
+        }
+        any |= confirm_and_install(bin);
+    }
+    if any {
+        println!();
+        print_dep_table();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_bins_never_include_soffice() {
+        assert!(!AUTO_BINS.contains(&"soffice"));
+        assert!(!AUTO_BINS.contains(&"libreoffice"));
+        assert_eq!(AUTO_BINS[0], "ffmpeg");
+    }
+
+    #[test]
+    fn check_all_no_auto_does_not_install() {
+        check_all(true, false);
+    }
 }

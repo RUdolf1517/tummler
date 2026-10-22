@@ -65,7 +65,7 @@ class Tummler < Formula
 
   def caveats
     <<~EOS
-      Optional tools (tummler offers to install them in a TTY):
+      Optional tools (`tummler --check-deps` offers to install them in a TTY):
         ffmpeg   video / HEIC / AVIF
         pandoc   documents
         poppler  PDF → png / docx

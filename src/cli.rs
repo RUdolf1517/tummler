@@ -29,6 +29,8 @@ Examples:
   tummler report.pdf png
   tummler report.pdf png --page 2
   tummler report.pdf docx
+  tummler video.mkv mp4 --strip-meta
+  tummler --check-deps
   tummler -i
 
 Exit codes:
@@ -106,6 +108,10 @@ pub struct Cli {
     #[arg(long = "page", value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
     pub page: Option<u32>,
 
+    /// Drop EXIF/GPS and author tags (ffmpeg; pandoc title/author/date)
+    #[arg(long = "strip-meta")]
+    pub strip_meta: bool,
+
     /// Verbose log on stderr
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
     pub verbose: bool,
@@ -138,7 +144,7 @@ pub struct Cli {
     #[arg(long = "list-formats")]
     pub list_formats: bool,
 
-    /// Check external dependencies
+    /// Status of ffmpeg/pandoc/poppler; in a TTY, offer to install missing ones
     #[arg(long = "check-deps")]
     pub check_deps: bool,
 
@@ -169,4 +175,25 @@ pub struct Cli {
     /// Write the man page (groff) to stdout
     #[arg(long = "man")]
     pub man: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn strip_meta_and_check_deps_parse() {
+        let c = Cli::try_parse_from(["tummler", "--strip-meta", "a.mkv", "mp4"]).unwrap();
+        assert!(c.strip_meta);
+        assert!(!c.check_deps);
+
+        let c = Cli::try_parse_from(["tummler", "--check-deps"]).unwrap();
+        assert!(c.check_deps);
+        assert!(!c.strip_meta);
+
+        let c = Cli::try_parse_from(["tummler", "--check-deps", "-y"]).unwrap();
+        assert!(c.check_deps);
+        assert!(c.yes);
+    }
 }
