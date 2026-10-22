@@ -35,30 +35,11 @@ pub fn convert_document(
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);
-
-        let out_ext = output
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        let hint = if out_ext == "pdf"
-            && (stderr.contains("pdflatex") || stderr.contains("xelatex") || stderr.contains("lualatex"))
-        {
-            "\nhint: PDF needs LaTeX (e.g. brew install --cask mactex / sudo apt install texlive-latex-recommended texlive-fonts-recommended)"
-        } else {
-            ""
-        };
-
-        return Err(TummlerError::DocumentError(format!(
-            "pandoc failed (exit {:?}):\n{}{}{}",
+        return Err(TummlerError::DocumentError(crate::hint::format_engine_fail(
+            "pandoc",
             result.status.code(),
-            stderr,
-            hint,
-            if stdout.is_empty() {
-                String::new()
-            } else {
-                format!("\n{stdout}")
-            }
+            &stderr,
+            &stdout,
         )));
     }
 

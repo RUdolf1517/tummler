@@ -113,9 +113,11 @@ fn convert_office_filter(
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);
-        return Err(TummlerError::Other(format!(
-            "LibreOffice failed (exit {:?}):\n{stderr}\n{stdout}",
-            result.status.code()
+        return Err(TummlerError::Other(crate::hint::format_engine_fail(
+            "LibreOffice",
+            result.status.code(),
+            &stderr,
+            &stdout,
         )));
     }
 

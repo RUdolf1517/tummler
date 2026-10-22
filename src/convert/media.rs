@@ -199,11 +199,11 @@ pub fn convert_media(
     if !output_result.status.success() {
         let stderr = String::from_utf8_lossy(&output_result.stderr);
         let stdout = String::from_utf8_lossy(&output_result.stdout);
-        return Err(TummlerError::MediaError(format!(
-            "ffmpeg failed (exit {:?}):\n{}\n{}",
+        return Err(TummlerError::MediaError(crate::hint::format_engine_fail(
+            "ffmpeg",
             output_result.status.code(),
-            stderr,
-            stdout
+            &stderr,
+            &stdout,
         )));
     }
 

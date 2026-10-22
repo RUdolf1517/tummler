@@ -248,9 +248,11 @@ fn raster_pages(
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);
-        return Err(TummlerError::PdfError(format!(
-            "pdftoppm failed (exit {:?}):\n{stderr}{stdout}",
-            result.status.code()
+        return Err(TummlerError::PdfError(crate::hint::format_engine_fail(
+            "pdftoppm",
+            result.status.code(),
+            &stderr,
+            &stdout,
         )));
     }
 
@@ -319,9 +321,11 @@ fn pdftotext(input: &Path, output: &Path, opts: &ConvertOpts<'_>) -> Result<(), 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);
-        return Err(TummlerError::PdfError(format!(
-            "pdftotext failed (exit {:?}):\n{stderr}{stdout}",
-            result.status.code()
+        return Err(TummlerError::PdfError(crate::hint::format_engine_fail(
+            "pdftotext",
+            result.status.code(),
+            &stderr,
+            &stdout,
         )));
     }
     Ok(())
@@ -352,9 +356,11 @@ fn pandoc_plain(
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);
-        return Err(TummlerError::DocumentError(format!(
-            "pandoc failed (exit {:?}):\n{stderr}{stdout}",
-            result.status.code()
+        return Err(TummlerError::DocumentError(crate::hint::format_engine_fail(
+            "pandoc",
+            result.status.code(),
+            &stderr,
+            &stdout,
         )));
     }
     Ok(())

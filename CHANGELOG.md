@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `--preserve-mtime`: copy the input's modification time onto the output (like `cp -p`)
+- ffmpeg/pandoc/poppler failures: one-line `hint:` for known stderr (LaTeX, missing codec, corrupt input, …); raw log kept
 - Homebrew: 0.3.3 bottles
 
 ## 0.3.3 — 2026-10-22

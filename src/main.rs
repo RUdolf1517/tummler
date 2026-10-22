@@ -4,6 +4,7 @@ mod convert;
 mod deps;
 mod error;
 mod geom;
+mod hint;
 mod interrupt;
 mod ui;
 mod util;
