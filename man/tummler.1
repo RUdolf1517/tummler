@@ -1,4 +1,4 @@
-.TH TUMMLER 1 "2026-10-22" "tummler 0.3.3" "User Commands"
+.TH TUMMLER 1 "2026-10-22" "tummler 0.3.4" "User Commands"
 .SH NAME
 tummler \- mix any file into any format
 .SH SYNOPSIS
@@ -80,16 +80,57 @@ Lossy quality 1–100.
 Replace existing files.
 .TP
 .BR \-r ", " \-\-recursive
-Walk directories.
+Walk directories. Does not follow symbolic links.
+.TP
+.B \-\-preserve\-structure
+With
+.B \-r
+and
+.B \-o
+directory, keep subdirectories:
+.I photos/vacation/photo.jpg
+→
+.I out/vacation/photo.webp .
+Default flattens to the output directory.
+Ignored without
+.B \-r
+and an
+.B \-o
+directory.
 .TP
 .BI \-\-include " GLOB
 Keep matching files (repeatable). Matches name or path.
+.B *
+does not cross
+.BR / ;
+.B **
+does (e.g.
+.B **/.git/**
+).
 .TP
 .BI \-\-exclude " GLOB
-Drop matching files (repeatable).
+Drop matching files (repeatable). Same glob rules as
+.BR \-\-include .
 .TP
 .B \-\-skip\-newer
 Skip if the output exists and is not older than the input.
+.TP
+.B \-\-preserve\-mtime
+Copy the input modification time onto the output (like
+.BR cp " " \-p ).
+Ignored for stdin/stdout.
+.TP
+.BI \-\-prefix " STR
+Prepend to the output stem.
+.TP
+.BI \-\-suffix " STR
+Append to the output stem:
+.B photo.png webp \-\-suffix _opt
+→
+.IR photo_opt.webp .
+No path separators. Ignored with
+.B \-o
+file or stdout.
 .TP
 .BI \-\-max " PX
 Longest side in pixels (images/video). Never upscales.
@@ -109,6 +150,15 @@ ffmpeg uses
 pandoc clears title/author/date.
 Images already drop EXIF on convert.
 LibreOffice and a PDF copy are unchanged.
+.TP
+.BI \-\-timeout " SECS
+Kill that file's converter after
+.I SECS
+(ffmpeg, pandoc, pdftoppm, soffice). Default: no limit.
+On timeout: kill the process group, log on stderr, continue the batch.
+Summary shows
+.BR timed\ out ;
+exit 1.
 .TP
 .BR \-j ", " \-\-jobs =\fIN
 Parallel jobs. 0 means the number of CPUs (media capped at 2).
@@ -189,6 +239,14 @@ tummler icon.svg png
 tummler photo.heic jpg \-\-max 1920
 .TQ
 tummler ./photos webp \-r \-\-skip\-newer \-o ./out
+.TQ
+tummler ./photos webp \-r \-o ./out \-\-preserve\-structure
+.TQ
+tummler photo.png jpg \-\-preserve\-mtime
+.TQ
+tummler photo.png webp \-\-suffix _opt
+.TQ
+tummler ./photos webp \-r \-\-timeout 120
 .TQ
 tummler table.xlsx csv
 .TQ

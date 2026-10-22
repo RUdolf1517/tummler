@@ -4,12 +4,14 @@ mod convert;
 mod deps;
 mod error;
 mod geom;
+mod hint;
 mod interrupt;
 mod ui;
 mod util;
 
 use clap::{CommandFactory, Parser};
 use convert::ConvertOpts;
+use error::TummlerError;
 use geom::Geometry;
 use rayon::prelude::*;
 use std::io::{self, Read, Write};
@@ -152,8 +154,48 @@ fn run(mut cli: cli::Cli) -> i32 {
     }
 
     let multiple = valid_inputs.len() > 1;
+    let preserve_structure = cli.preserve_structure
+        && cli.recursive
+        && cli.output.as_deref().is_some_and(|p| {
+            !util::is_stdio(p) && output_is_directory_hint(p, multiple)
+        });
+    if cli.preserve_structure && !preserve_structure {
+        if !cli.recursive {
+            ui::warn("--preserve-structure ignored without -r");
+        } else {
+            ui::warn("--preserve-structure ignored without -o directory");
+        }
+    }
     let stdout_mode = cli.output.as_deref().is_some_and(util::is_stdio)
         || (valid_inputs.len() == 1 && util::is_stdio(&valid_inputs[0]) && cli.output.is_none());
+
+    let prefix = cli.prefix.clone().unwrap_or_default();
+    let suffix = cli.suffix.clone().unwrap_or_default();
+    if let Err(e) = util::validate_affix("prefix", &prefix) {
+        ui::error(e);
+        return ui::EXIT_USAGE;
+    }
+    if let Err(e) = util::validate_affix("suffix", &suffix) {
+        ui::error(e);
+        return ui::EXIT_USAGE;
+    }
+    let apply_affix = !stdout_mode
+        && match cli.output.as_deref() {
+            None => true,
+            Some(p) if util::is_stdio(p) => false,
+            Some(p) => output_is_directory_hint(p, multiple),
+        };
+    if (!prefix.is_empty() || !suffix.is_empty()) && !apply_affix {
+        ui::warn("--prefix/--suffix ignored with -o file or stdout");
+    }
+    let affix = if apply_affix {
+        util::StemAffix {
+            prefix: &prefix,
+            suffix: &suffix,
+        }
+    } else {
+        util::StemAffix::NONE
+    };
 
     if stdout_mode && multiple {
         ui::error("stdout ('-') cannot be used with multiple inputs");
@@ -215,11 +257,19 @@ fn run(mut cli: cli::Cli) -> i32 {
             }
             let planned = match expand_outputs(
                 input,
-                &target_ext,
-                cli.output.as_deref(),
-                multiple,
-                split_sheets,
-                sheet_name,
+                &OutputPlan {
+                    target_ext: &target_ext,
+                    output_arg: cli.output.as_deref(),
+                    multiple,
+                    all_sheets: split_sheets,
+                    sheet: sheet_name,
+                    structure_root: output_structure_root(
+                        preserve_structure,
+                        input,
+                        &cli.inputs,
+                    ),
+                    affix,
+                },
             ) {
                 Ok(p) => p,
                 Err(e) => {
@@ -260,11 +310,19 @@ fn run(mut cli: cli::Cli) -> i32 {
     for input in &valid_inputs {
         let planned = match expand_outputs(
             input,
-            &target_ext,
-            cli.output.as_deref(),
-            multiple,
-            split_sheets,
-            sheet_name,
+            &OutputPlan {
+                target_ext: &target_ext,
+                output_arg: cli.output.as_deref(),
+                multiple,
+                all_sheets: split_sheets,
+                sheet: sheet_name,
+                structure_root: output_structure_root(
+                    preserve_structure,
+                    input,
+                    &cli.inputs,
+                ),
+                affix,
+            },
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -305,6 +363,7 @@ fn run(mut cli: cli::Cli) -> i32 {
     let quality = cli.quality;
     let overwrite = cli.overwrite;
     let skip_newer = cli.skip_newer;
+    let preserve_mtime = cli.preserve_mtime;
     let no_auto = cli.no_auto_install;
     let yes = cli.yes;
     let verbose = cli.verbose;
@@ -312,6 +371,7 @@ fn run(mut cli: cli::Cli) -> i32 {
 
     let success = AtomicUsize::new(0);
     let fail_extra = AtomicUsize::new(0);
+    let timed_out = AtomicUsize::new(0);
     let skipped = AtomicUsize::new(0);
     let bytes_in = AtomicU64::new(0);
     let bytes_out = AtomicU64::new(0);
@@ -321,6 +381,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         quality,
         overwrite,
         skip_newer,
+        preserve_mtime,
         ffmpeg_args: ffmpeg_args.as_deref(),
         no_auto,
         yes,
@@ -329,6 +390,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         ffmpeg_threads,
         page: cli.page,
         strip_meta: cli.strip_meta,
+        timeout: cli.timeout,
     };
 
     let run_one = |t: &Task| {
@@ -353,6 +415,10 @@ fn run(mut cli: cli::Cli) -> i32 {
             TaskResult::Err(e) => {
                 ui::error(format!("{}: {e}", t.label_in));
                 fail_extra.fetch_add(1, Ordering::Relaxed);
+            }
+            TaskResult::TimedOut(secs) => {
+                ui::error(format!("{}: timed out after {secs}s", t.label_in));
+                timed_out.fetch_add(1, Ordering::Relaxed);
             }
         }
     };
@@ -425,16 +491,17 @@ fn run(mut cli: cli::Cli) -> i32 {
     failed += fail_extra.load(Ordering::Relaxed);
     let success = success.load(Ordering::Relaxed);
     let skipped = skipped.load(Ordering::Relaxed);
+    let timed_out = timed_out.load(Ordering::Relaxed);
     let bytes_in = bytes_in.load(Ordering::Relaxed);
     let bytes_out = bytes_out.load(Ordering::Relaxed);
 
     if !cli.quiet {
         ui::info(util::format_summary(
-            success, skipped, failed, bytes_in, bytes_out,
+            success, skipped, failed, timed_out, bytes_in, bytes_out,
         ));
     }
 
-    if failed > 0 {
+    if failed > 0 || timed_out > 0 {
         ui::EXIT_FAIL
     } else {
         ui::EXIT_OK
@@ -445,6 +512,7 @@ enum TaskResult {
     Ok { bin: u64, bout: u64 },
     Skip,
     Err(String),
+    TimedOut(u64),
 }
 
 struct JobSpec<'a> {
@@ -452,6 +520,7 @@ struct JobSpec<'a> {
     quality: Option<u8>,
     overwrite: bool,
     skip_newer: bool,
+    preserve_mtime: bool,
     ffmpeg_args: Option<&'a str>,
     no_auto: bool,
     yes: bool,
@@ -460,12 +529,14 @@ struct JobSpec<'a> {
     ffmpeg_threads: usize,
     page: Option<u32>,
     strip_meta: bool,
+    timeout: Option<u64>,
 }
 
 fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
     if spec.skip_newer && util::output_up_to_date(&t.input, &t.output) {
         return TaskResult::Skip;
     }
+    let _deadline = interrupt::begin_file(spec.timeout);
     let bin = util::file_size(&t.input);
     let overwrite = spec.overwrite || (spec.skip_newer && t.output.exists());
     let opts = ConvertOpts {
@@ -482,11 +553,31 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
         strip_meta: spec.strip_meta,
     };
     match convert::convert_file(&t.input, &t.output, spec.target_ext, &opts) {
-        Ok(()) => TaskResult::Ok {
-            bin,
-            bout: util::file_size(&t.output),
-        },
+        Ok(()) => {
+            if spec.preserve_mtime
+                && let Err(e) = util::copy_mtime(&t.input, &t.output)
+            {
+                ui::warn(format!("{}: could not preserve mtime: {e}", t.label_out));
+            }
+            TaskResult::Ok {
+                bin,
+                bout: util::file_size(&t.output),
+            }
+        }
+        Err(TummlerError::TimedOut(secs)) => TaskResult::TimedOut(secs),
         Err(e) => TaskResult::Err(e.to_string()),
+    }
+}
+
+fn output_structure_root<'a>(
+    preserve: bool,
+    file: &'a Path,
+    originals: &'a [PathBuf],
+) -> Option<&'a Path> {
+    if preserve {
+        util::structure_root_for(file, originals)
+    } else {
+        None
     }
 }
 
@@ -501,21 +592,34 @@ fn output_is_directory_hint(out: &Path, multiple_inputs: bool) -> bool {
         || multiple_inputs
 }
 
+struct OutputPlan<'a> {
+    target_ext: &'a str,
+    output_arg: Option<&'a Path>,
+    multiple: bool,
+    all_sheets: bool,
+    sheet: Option<&'a str>,
+    structure_root: Option<&'a Path>,
+    affix: util::StemAffix<'a>,
+}
+
 fn expand_outputs(
     input: &Path,
-    target_ext: &str,
-    output_arg: Option<&Path>,
-    multiple_inputs: bool,
-    all_sheets: bool,
-    sheet: Option<&str>,
+    plan: &OutputPlan<'_>,
 ) -> Result<Vec<(PathBuf, Option<String>)>, String> {
-    let base = util::resolve_output_path(input, target_ext, output_arg, multiple_inputs)?;
+    let base = util::resolve_output_path(
+        input,
+        plan.target_ext,
+        plan.output_arg,
+        plan.multiple,
+        plan.structure_root,
+        plan.affix,
+    )?;
     let is_sheet = util::classify_ext(&util::get_extension(input).unwrap_or_default())
         == util::FormatKind::Spreadsheet;
-    if all_sheets && is_sheet {
+    if plan.all_sheets && is_sheet {
         convert::spreadsheet::plan_outputs(input, &base, true, None).map_err(|e| e.to_string())
     } else {
-        Ok(vec![(base, sheet.map(str::to_string))])
+        Ok(vec![(base, plan.sheet.map(str::to_string))])
     }
 }
 
@@ -576,7 +680,14 @@ fn run_stdio(
             }
         }
     } else {
-        match util::resolve_output_path(input, target_ext, cli.output.as_deref(), false) {
+        match util::resolve_output_path(
+            input,
+            target_ext,
+            cli.output.as_deref(),
+            false,
+            None,
+            util::StemAffix::NONE,
+        ) {
             Ok(p) => p,
             Err(e) => {
                 ui::error(format!("{}: {e}", input.display()));
@@ -622,8 +733,19 @@ fn run_stdio(
         strip_meta: cli.strip_meta,
     };
 
-    match convert::convert_file(&input_path, &output, target_ext, &opts) {
+    let result = {
+        let _deadline = interrupt::begin_file(cli.timeout);
+        convert::convert_file(&input_path, &output, target_ext, &opts)
+    };
+    match result {
         Ok(()) => {
+            if cli.preserve_mtime
+                && !stdout_mode
+                && !util::is_stdio(input)
+                && let Err(e) = util::copy_mtime(&input_path, &output)
+            {
+                ui::warn(format!("{label_out}: could not preserve mtime: {e}"));
+            }
             if stdout_mode && let Err(e) = emit_stdout(&output) {
                 ui::finish_clear(spin.as_ref());
                 ui::error(format!("failed to write stdout: {e}"));
@@ -633,8 +755,16 @@ fn run_stdio(
             ui::finish_ok(spin.as_ref(), format!("{label_in} → {label_out}"));
             if !cli.quiet {
                 let bout = util::file_size(&output);
-                ui::info(util::format_summary(success, 0, failed, bin, bout));
+                ui::info(util::format_summary(success, 0, failed, 0, bin, bout));
             }
+        }
+        Err(TummlerError::TimedOut(secs)) => {
+            ui::finish_clear(spin.as_ref());
+            ui::error(format!("{label_in}: timed out after {secs}s"));
+            if !cli.quiet {
+                ui::info(util::format_summary(0, 0, 0, 1, 0, 0));
+            }
+            return ui::EXIT_FAIL;
         }
         Err(e) => {
             ui::finish_clear(spin.as_ref());

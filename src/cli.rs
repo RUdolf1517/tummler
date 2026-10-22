@@ -13,6 +13,10 @@ Examples:
   cat in.png | tummler - jpeg > out.jpeg
   tummler -- -file.png jpeg
   tummler ./photos webp -r --include '*.png' --skip-newer
+  tummler ./photos webp -r -o ./out --preserve-structure
+  tummler photo.png jpg --preserve-mtime
+  tummler photo.png webp --suffix _opt
+  tummler ./photos webp -r --timeout 120
   tummler photo.heic jpg --max 1920
   tummler table.xlsx csv
   tummler table.csv xlsx
@@ -84,6 +88,10 @@ pub struct Cli {
     #[arg(short = 'r', long = "recursive")]
     pub recursive: bool,
 
+    /// Keep subdirectories under -o (with -r). Default flattens to the output dir
+    #[arg(long = "preserve-structure")]
+    pub preserve_structure: bool,
+
     /// Include only files matching GLOB (repeatable). Matches name or path.
     #[arg(long = "include", value_name = "GLOB", action = clap::ArgAction::Append)]
     pub include: Vec<String>,
@@ -95,6 +103,18 @@ pub struct Cli {
     /// Skip if the output exists and is newer than (or as new as) the input
     #[arg(long = "skip-newer")]
     pub skip_newer: bool,
+
+    /// Copy the input's modification time onto the output (like cp -p)
+    #[arg(long = "preserve-mtime")]
+    pub preserve_mtime: bool,
+
+    /// Prepend to the output stem (`--prefix opt_` → `opt_photo.webp`)
+    #[arg(long = "prefix", value_name = "STR")]
+    pub prefix: Option<String>,
+
+    /// Append to the output stem (`--suffix _opt` → `photo_opt.webp`)
+    #[arg(long = "suffix", value_name = "STR")]
+    pub suffix: Option<String>,
 
     /// Longest side in pixels (images/video; keep aspect, never upscale)
     #[arg(long = "max", value_name = "PX", value_parser = clap::value_parser!(u32).range(1..))]
@@ -111,6 +131,10 @@ pub struct Cli {
     /// Drop EXIF/GPS and author tags (ffmpeg; pandoc title/author/date)
     #[arg(long = "strip-meta")]
     pub strip_meta: bool,
+
+    /// Kill one file's converter after SECS (default: no limit)
+    #[arg(long = "timeout", value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..))]
+    pub timeout: Option<u64>,
 
     /// Verbose log on stderr
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
@@ -195,5 +219,31 @@ mod tests {
         let c = Cli::try_parse_from(["tummler", "--check-deps", "-y"]).unwrap();
         assert!(c.check_deps);
         assert!(c.yes);
+
+        let c = Cli::try_parse_from(["tummler", "--preserve-mtime", "a.png", "jpg"]).unwrap();
+        assert!(c.preserve_mtime);
+        assert!(!c.skip_newer);
+
+        let c = Cli::try_parse_from([
+            "tummler",
+            "--preserve-structure",
+            "-r",
+            "-o",
+            "./out",
+            "./photos",
+            "webp",
+        ])
+        .unwrap();
+        assert!(c.preserve_structure);
+        assert!(c.recursive);
+
+        let c = Cli::try_parse_from(["tummler", "--suffix", "_opt", "a.png", "webp"]).unwrap();
+        assert_eq!(c.suffix.as_deref(), Some("_opt"));
+        let c = Cli::try_parse_from(["tummler", "--prefix", "opt_", "a.png", "webp"]).unwrap();
+        assert_eq!(c.prefix.as_deref(), Some("opt_"));
+
+        let c = Cli::try_parse_from(["tummler", "--timeout", "120", "a.mkv", "mp4"]).unwrap();
+        assert_eq!(c.timeout, Some(120));
+        assert!(Cli::try_parse_from(["tummler", "--timeout", "0", "a.mkv", "mp4"]).is_err());
     }
 }

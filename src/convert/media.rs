@@ -69,7 +69,7 @@ pub(crate) fn strip_meta_args(
     ARGS
 }
 
-fn ffmpeg_copy(input: &Path, output: &Path, strip_meta: bool) -> bool {
+fn ffmpeg_copy(input: &Path, output: &Path, strip_meta: bool) -> Result<bool, TummlerError> {
     let mut cmd = Command::new("ffmpeg");
     cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y"]);
     cmd.arg("-i").arg(input);
@@ -78,13 +78,19 @@ fn ffmpeg_copy(input: &Path, output: &Path, strip_meta: bool) -> bool {
     }
     cmd.args(["-c", "copy"]);
     cmd.arg(output);
-    let ok = interrupt::run(&mut cmd)
-        .ok()
-        .is_some_and(|r| r.status.success());
-    if !ok {
-        let _ = std::fs::remove_file(output);
+    match interrupt::run(&mut cmd) {
+        Ok(r) => {
+            let ok = r.status.success();
+            if !ok {
+                let _ = std::fs::remove_file(output);
+            }
+            Ok(ok)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(output);
+            Err(e)
+        }
     }
-    ok
 }
 
 /// Audio/video conversion via ffmpeg.
@@ -110,7 +116,7 @@ pub fn convert_media(
         .map(normalize_ext)
         .unwrap_or_default();
     if can_try_stream_copy(&in_ext, &out_ext, quality, geometry, ffmpeg_args)
-        && ffmpeg_copy(input, output, strip_meta)
+        && ffmpeg_copy(input, output, strip_meta)?
     {
         return Ok(());
     }
@@ -193,17 +199,16 @@ pub fn convert_media(
 
     cmd.arg(output);
 
-    let output_result = interrupt::run(&mut cmd)
-        .map_err(|e| TummlerError::MediaError(e.to_string()))?;
+    let output_result = interrupt::run(&mut cmd)?;
 
     if !output_result.status.success() {
         let stderr = String::from_utf8_lossy(&output_result.stderr);
         let stdout = String::from_utf8_lossy(&output_result.stdout);
-        return Err(TummlerError::MediaError(format!(
-            "ffmpeg failed (exit {:?}):\n{}\n{}",
+        return Err(TummlerError::MediaError(crate::hint::format_engine_fail(
+            "ffmpeg",
             output_result.status.code(),
-            stderr,
-            stdout
+            &stderr,
+            &stdout,
         )));
     }
 

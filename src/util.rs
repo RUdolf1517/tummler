@@ -118,6 +118,15 @@ pub fn is_staging_name(path: &Path) -> bool {
         .is_some_and(|n| n.starts_with(".tummler-tmp-"))
 }
 
+/// Copy `from`'s modification time onto `to`. Mode/atime unchanged.
+pub fn copy_mtime(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mtime = from.metadata()?.modified()?;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(to)?
+        .set_modified(mtime)
+}
+
 pub fn output_up_to_date(input: &Path, output: &Path) -> bool {
     let Ok(out_m) = output.metadata() else {
         return false;
@@ -159,20 +168,26 @@ pub fn format_summary(
     ok: usize,
     skipped: usize,
     failed: usize,
+    timed_out: usize,
     bytes_in: u64,
     bytes_out: u64,
 ) -> String {
-    if ok == 0 {
+    fn extra(skipped: usize, failed: usize, timed_out: usize) -> Vec<String> {
         let mut parts = Vec::new();
         if skipped > 0 {
-            parts.push(format!(
-                "{} skipped",
-                skipped
-            ));
+            parts.push(format!("{skipped} skipped"));
         }
         if failed > 0 {
             parts.push(format!("{failed} failed"));
         }
+        if timed_out > 0 {
+            parts.push(format!("{timed_out} timed out"));
+        }
+        parts
+    }
+
+    if ok == 0 {
+        let parts = extra(skipped, failed, timed_out);
         if parts.is_empty() {
             return "nothing to do".into();
         }
@@ -183,12 +198,7 @@ pub fn format_summary(
     } else {
         format!("{ok} files")
     }];
-    if skipped > 0 {
-        parts.push(format!("{skipped} skipped"));
-    }
-    if failed > 0 {
-        parts.push(format!("{failed} failed"));
-    }
+    parts.extend(extra(skipped, failed, timed_out));
     let mut s = parts.join(", ");
     if bytes_in > 0 {
         let delta = if bytes_out < bytes_in {
@@ -413,16 +423,99 @@ pub fn is_ffmpeg_image(ext: &str) -> bool {
     is_heif(ext) || normalize_ext(ext) == "avif"
 }
 
+/// Longest original input that is a directory prefix of `file`.
+/// File arguments are not roots (no extra structure to keep).
+pub fn structure_root_for<'a>(file: &Path, originals: &'a [PathBuf]) -> Option<&'a Path> {
+    originals
+        .iter()
+        .filter(|o| !is_stdio(o) && file.starts_with(o.as_path()) && file != o.as_path())
+        .max_by_key(|o| o.as_os_str().len())
+        .map(|p| p.as_path())
+}
+
+/// Relative path of `file` under `root`, or `None` if it escapes (`..`).
+pub fn rel_under(root: &Path, file: &Path) -> Option<PathBuf> {
+    let rel = file.strip_prefix(root).ok()?;
+    if rel.as_os_str().is_empty() {
+        return None;
+    }
+    if rel.components().any(|c| {
+        matches!(
+            c,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        )
+    }) {
+        return None;
+    }
+    Some(rel.to_path_buf())
+}
+
+fn output_stem(path: &Path) -> String {
+    strip_double_ext_stem(path).unwrap_or_else(|| {
+        path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output")
+            .to_string()
+    })
+}
+
+/// Prefix/suffix glued onto the output stem (`photo` + suffix `_opt` → `photo_opt.webp`).
+#[derive(Clone, Copy)]
+pub struct StemAffix<'a> {
+    pub prefix: &'a str,
+    pub suffix: &'a str,
+}
+
+impl StemAffix<'static> {
+    pub const NONE: Self = Self {
+        prefix: "",
+        suffix: "",
+    };
+}
+
+/// Empty is fine (flag unused). `/`, `\\`, `.`, `..` are not.
+pub fn validate_affix(flag: &str, s: &str) -> Result<(), String> {
+    if s.is_empty() {
+        return Ok(());
+    }
+    if s.contains('/') || s.contains('\\') || s.contains('\0') {
+        return Err(format!("--{flag} cannot contain a path separator"));
+    }
+    if s == "." || s == ".." {
+        return Err(format!("--{flag} cannot be {s}"));
+    }
+    Ok(())
+}
+
+fn affixed_stem(path: &Path, affix: StemAffix<'_>) -> String {
+    format!("{}{}{}", affix.prefix, output_stem(path), affix.suffix)
+}
+
+/// Same relative path, target extension (`vacation/photo.jpg` + webp → `vacation/photo.webp`).
+pub fn retarget_ext(path: &Path, target_ext: &str, affix: StemAffix<'_>) -> PathBuf {
+    let target_ext = output_extension(target_ext);
+    let name = format!("{}.{}", affixed_stem(path, affix), target_ext);
+    match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.join(name),
+        _ => PathBuf::from(name),
+    }
+}
+
 /// Resolve the output path.
 ///
 /// - `-o` existing directory / path ending with `/` / multiple inputs → directory
 /// - `-o` file with a single input → that file
 /// - no `-o` → next to the source, same stem + new extension
+/// - `structure_root`: keep the path under that directory (`-r -o dir --preserve-structure`)
 pub fn resolve_output_path(
     input: &Path,
     target_ext: &str,
     output_arg: Option<&Path>,
     multiple_inputs: bool,
+    structure_root: Option<&Path>,
+    affix: StemAffix<'_>,
 ) -> Result<PathBuf, String> {
     let target_ext = output_extension(target_ext);
     let target_ext_with_dot = format!(".{target_ext}");
@@ -437,14 +530,24 @@ pub fn resolve_output_path(
             || multiple_inputs;
 
         if is_dir_hint {
-            let stem = strip_double_ext_stem(input).unwrap_or_else(|| {
-                input
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("output")
-                    .to_string()
-            });
-            return Ok(out.join(format!("{stem}{target_ext_with_dot}")));
+            let name = if let Some(root) = structure_root {
+                if let Some(rel) = rel_under(root, input) {
+                    retarget_ext(&rel, &target_ext, affix)
+                } else {
+                    PathBuf::from(format!(
+                        "{}{}",
+                        affixed_stem(input, affix),
+                        target_ext_with_dot
+                    ))
+                }
+            } else {
+                PathBuf::from(format!(
+                    "{}{}",
+                    affixed_stem(input, affix),
+                    target_ext_with_dot
+                ))
+            };
+            return Ok(out.join(name));
         }
 
         if let Some(out_ext) = get_extension(out)
@@ -469,14 +572,11 @@ pub fn resolve_output_path(
     }
 
     let parent = input.parent().unwrap_or_else(|| Path::new("."));
-    let stem = strip_double_ext_stem(input).unwrap_or_else(|| {
-        input
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output")
-            .to_string()
-    });
-    Ok(parent.join(format!("{stem}{target_ext_with_dot}")))
+    Ok(parent.join(format!(
+        "{}{}",
+        affixed_stem(input, affix),
+        target_ext_with_dot
+    )))
 }
 
 fn strip_double_ext_stem(path: &Path) -> Option<String> {
@@ -500,6 +600,7 @@ pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
             files.push(input.clone());
         } else if input.is_dir() {
             if recursive {
+                // follow_links defaults to false: do not walk through symlinks.
                 for entry in walkdir::WalkDir::new(input).into_iter().filter_map(|e| e.ok()) {
                     if entry.file_type().is_file() {
                         let p = entry.path().to_path_buf();
@@ -728,33 +829,40 @@ mod tests {
         assert!(man.contains("brew trust"));
         assert!(man.contains("RUdolf1517/tummler/tummler"));
         assert!(man.contains("strip-meta") || man.contains("strip\\-meta"));
+        assert!(man.contains("preserve-mtime") || man.contains("preserve\\-mtime"));
+        assert!(
+            man.contains("preserve-structure") || man.contains("preserve\\-structure")
+        );
+        assert!(man.contains("suffix"));
+        assert!(man.contains("symbolic links") || man.contains("symlinks"));
+        assert!(man.contains("timeout"));
     }
 
     #[test]
     fn test_resolve_no_output() {
         let input = Path::new("/tmp/photo.png");
-        let out = resolve_output_path(input, "jpg", None, false).unwrap();
+        let out = resolve_output_path(input, "jpg", None, false, None, StemAffix::NONE).unwrap();
         assert_eq!(out, Path::new("/tmp/photo.jpg"));
     }
 
     #[test]
     fn test_resolve_jpeg_keeps_jpeg() {
         let input = Path::new("/tmp/photo.png");
-        let out = resolve_output_path(input, "jpeg", None, false).unwrap();
+        let out = resolve_output_path(input, "jpeg", None, false, None, StemAffix::NONE).unwrap();
         assert_eq!(out, Path::new("/tmp/photo.jpeg"));
     }
 
     #[test]
     fn test_resolve_with_dir() {
         let input = Path::new("/tmp/a.png");
-        let out = resolve_output_path(input, "webp", Some(Path::new("/out")), true).unwrap();
+        let out = resolve_output_path(input, "webp", Some(Path::new("/out")), true, None, StemAffix::NONE).unwrap();
         assert_eq!(out, Path::new("/out/a.webp"));
     }
 
     #[test]
     fn test_resolve_tar_gz_stem() {
         let input = Path::new("/tmp/Archive.TAR.GZ");
-        let out = resolve_output_path(input, "zip", None, false).unwrap();
+        let out = resolve_output_path(input, "zip", None, false, None, StemAffix::NONE).unwrap();
         assert_eq!(out, Path::new("/tmp/Archive.zip"));
     }
 
@@ -802,6 +910,8 @@ mod tests {
             "jpeg",
             Some(Path::new("-")),
             false,
+            None,
+            StemAffix::NONE,
         )
         .unwrap();
         assert_eq!(out, Path::new("-"));
@@ -849,6 +959,9 @@ mod tests {
         assert!(glob_match("*_raw*", "img_raw_1.png"));
         assert!(glob_match("photos/*", "photos/a.png"));
         assert!(glob_match("**/*.png", "a/b/c.png"));
+        assert!(glob_match("**/.git/**", "proj/.git/objects/pack"));
+        assert!(glob_match("**/node_modules/**", "app/node_modules/x/index.js"));
+        assert!(!glob_match("**/node_modules/**", "app/src/index.js"));
         assert!(path_matches_glob(Path::new("dir/a.png"), "*.png"));
         assert!(!passes_filters(
             Path::new("a.jpg"),
@@ -866,12 +979,14 @@ mod tests {
     fn test_human_bytes_and_summary() {
         assert_eq!(human_bytes(500), "500 B");
         assert_eq!(human_bytes(1024), "1.0 KB");
-        let s = format_summary(12, 0, 0, 48 * 1024 * 1024, 11 * 1024 * 1024);
+        let s = format_summary(12, 0, 0, 0, 48 * 1024 * 1024, 11 * 1024 * 1024);
         assert!(s.contains("12 files"));
         assert!(s.contains("48 MB"));
         assert!(s.contains("11 MB"));
         assert!(s.contains("-77%"));
-        assert_eq!(format_summary(0, 3, 0, 0, 0), "3 skipped");
+        assert_eq!(format_summary(0, 3, 0, 0, 0, 0), "3 skipped");
+        assert_eq!(format_summary(0, 0, 0, 1, 0, 0), "1 timed out");
+        assert!(format_summary(11, 0, 0, 1, 0, 0).contains("1 timed out"));
     }
 
     #[test]
@@ -891,5 +1006,132 @@ mod tests {
         assert!(output_up_to_date(&a, &b));
         assert!(!output_up_to_date(&b, &a));
         assert!(!output_up_to_date(&a, Path::new("/no/such/file")));
+    }
+
+    #[test]
+    fn copy_mtime_matches_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.bin");
+        let dst = dir.path().join("dst.bin");
+        std::fs::write(&src, b"in").unwrap();
+        std::fs::write(&dst, b"out").unwrap();
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(120);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&src)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+        copy_mtime(&src, &dst).unwrap();
+        let got = dst.metadata().unwrap().modified().unwrap();
+        let want = src.metadata().unwrap().modified().unwrap();
+        assert_eq!(got, want);
+        assert!(output_up_to_date(&src, &dst));
+    }
+
+    #[test]
+    fn flatten_collides_same_stem() {
+        let a = Path::new("photos/vacation/photo.jpg");
+        let b = Path::new("photos/birthday/photo.jpg");
+        let out = Path::new("out");
+        let ra = resolve_output_path(a, "webp", Some(out), true, None, StemAffix::NONE).unwrap();
+        let rb = resolve_output_path(b, "webp", Some(out), true, None, StemAffix::NONE).unwrap();
+        assert_eq!(ra, Path::new("out/photo.webp"));
+        assert_eq!(rb, Path::new("out/photo.webp"));
+    }
+
+    #[test]
+    fn preserve_structure_keeps_subdirs() {
+        let root = Path::new("photos");
+        let a = Path::new("photos/vacation/photo.jpg");
+        let b = Path::new("photos/birthday/photo.jpg");
+        let out = Path::new("out");
+        let ra = resolve_output_path(a, "webp", Some(out), true, Some(root), StemAffix::NONE).unwrap();
+        let rb = resolve_output_path(b, "webp", Some(out), true, Some(root), StemAffix::NONE).unwrap();
+        assert_eq!(ra, Path::new("out/vacation/photo.webp"));
+        assert_eq!(rb, Path::new("out/birthday/photo.webp"));
+        assert_eq!(
+            resolve_output_path(
+                Path::new("photos/photo.jpg"),
+                "webp",
+                Some(out),
+                true,
+                Some(root),
+                StemAffix::NONE,
+            )
+            .unwrap(),
+            Path::new("out/photo.webp")
+        );
+    }
+
+    #[test]
+    fn preserve_structure_two_roots() {
+        let originals = [
+            PathBuf::from("a"),
+            PathBuf::from("b"),
+        ];
+        let f = Path::new("a/vacation/photo.jpg");
+        let g = Path::new("b/vacation/photo.jpg");
+        assert_eq!(structure_root_for(f, &originals), Some(Path::new("a")));
+        assert_eq!(structure_root_for(g, &originals), Some(Path::new("b")));
+        let out = Path::new("out");
+        assert_eq!(
+            resolve_output_path(f, "jpg", Some(out), true, structure_root_for(f, &originals), StemAffix::NONE)
+                .unwrap(),
+            Path::new("out/vacation/photo.jpg")
+        );
+        assert_eq!(
+            resolve_output_path(g, "jpg", Some(out), true, structure_root_for(g, &originals), StemAffix::NONE)
+                .unwrap(),
+            Path::new("out/vacation/photo.jpg")
+        );
+    }
+
+    #[test]
+    fn structure_root_ignores_file_args_and_dotdot() {
+        let originals = [PathBuf::from("photos/vacation/photo.jpg")];
+        assert!(structure_root_for(Path::new("photos/vacation/photo.jpg"), &originals).is_none());
+        assert!(rel_under(Path::new("photos"), Path::new("other/x.jpg")).is_none());
+        assert_eq!(
+            retarget_ext(Path::new("vacation/archive.tar.gz"), "zip", StemAffix::NONE),
+            Path::new("vacation/archive.zip")
+        );
+    }
+
+    #[test]
+    fn suffix_prefix_on_stem_not_dirs() {
+        let affix = StemAffix {
+            prefix: "opt_",
+            suffix: "_small",
+        };
+        let out = resolve_output_path(
+            Path::new("photos/vacation/photo.jpg"),
+            "webp",
+            None,
+            false,
+            None,
+            affix,
+        )
+        .unwrap();
+        assert_eq!(out, Path::new("photos/vacation/opt_photo_small.webp"));
+
+        let root = Path::new("photos");
+        let out = resolve_output_path(
+            Path::new("photos/vacation/photo.jpg"),
+            "webp",
+            Some(Path::new("out")),
+            true,
+            Some(root),
+            StemAffix {
+                prefix: "",
+                suffix: "_opt",
+            },
+        )
+        .unwrap();
+        assert_eq!(out, Path::new("out/vacation/photo_opt.webp"));
+
+        assert!(validate_affix("suffix", "_opt").is_ok());
+        assert!(validate_affix("suffix", "a/b").is_err());
+        assert!(validate_affix("prefix", "..").is_err());
     }
 }
