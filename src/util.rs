@@ -168,20 +168,26 @@ pub fn format_summary(
     ok: usize,
     skipped: usize,
     failed: usize,
+    timed_out: usize,
     bytes_in: u64,
     bytes_out: u64,
 ) -> String {
-    if ok == 0 {
+    fn extra(skipped: usize, failed: usize, timed_out: usize) -> Vec<String> {
         let mut parts = Vec::new();
         if skipped > 0 {
-            parts.push(format!(
-                "{} skipped",
-                skipped
-            ));
+            parts.push(format!("{skipped} skipped"));
         }
         if failed > 0 {
             parts.push(format!("{failed} failed"));
         }
+        if timed_out > 0 {
+            parts.push(format!("{timed_out} timed out"));
+        }
+        parts
+    }
+
+    if ok == 0 {
+        let parts = extra(skipped, failed, timed_out);
         if parts.is_empty() {
             return "nothing to do".into();
         }
@@ -192,12 +198,7 @@ pub fn format_summary(
     } else {
         format!("{ok} files")
     }];
-    if skipped > 0 {
-        parts.push(format!("{skipped} skipped"));
-    }
-    if failed > 0 {
-        parts.push(format!("{failed} failed"));
-    }
+    parts.extend(extra(skipped, failed, timed_out));
     let mut s = parts.join(", ");
     if bytes_in > 0 {
         let delta = if bytes_out < bytes_in {
@@ -834,6 +835,7 @@ mod tests {
         );
         assert!(man.contains("suffix"));
         assert!(man.contains("symbolic links") || man.contains("symlinks"));
+        assert!(man.contains("timeout"));
     }
 
     #[test]
@@ -977,12 +979,14 @@ mod tests {
     fn test_human_bytes_and_summary() {
         assert_eq!(human_bytes(500), "500 B");
         assert_eq!(human_bytes(1024), "1.0 KB");
-        let s = format_summary(12, 0, 0, 48 * 1024 * 1024, 11 * 1024 * 1024);
+        let s = format_summary(12, 0, 0, 0, 48 * 1024 * 1024, 11 * 1024 * 1024);
         assert!(s.contains("12 files"));
         assert!(s.contains("48 MB"));
         assert!(s.contains("11 MB"));
         assert!(s.contains("-77%"));
-        assert_eq!(format_summary(0, 3, 0, 0, 0), "3 skipped");
+        assert_eq!(format_summary(0, 3, 0, 0, 0, 0), "3 skipped");
+        assert_eq!(format_summary(0, 0, 0, 1, 0, 0), "1 timed out");
+        assert!(format_summary(11, 0, 0, 1, 0, 0).contains("1 timed out"));
     }
 
     #[test]

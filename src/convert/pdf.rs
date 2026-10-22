@@ -183,12 +183,17 @@ fn parse_pdfinfo_pages(text: &str) -> Option<u32> {
     None
 }
 
-fn pdfinfo_text(input: &Path) -> Option<String> {
-    let out = Command::new("pdfinfo").arg(input).output().ok()?;
-    if !out.status.success() {
-        return None;
+fn pdfinfo_text(input: &Path) -> Result<Option<String>, TummlerError> {
+    let mut cmd = Command::new("pdfinfo");
+    cmd.arg(input);
+    match interrupt::run(&mut cmd) {
+        Ok(out) if out.status.success() => {
+            Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
+        }
+        Ok(_) => Ok(None),
+        Err(e @ TummlerError::TimedOut(_)) => Err(e),
+        Err(_) => Ok(None),
     }
-    Some(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// pdftoppm size flags + whether the PNG is already at `geometry.target_size`.
@@ -220,7 +225,7 @@ fn raster_pages(
     deps::ensure_available("pdftoppm", opts.no_auto_install, opts.assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("pdftoppm".into(), e))?;
 
-    let info = pdfinfo_text(input);
+    let info = pdfinfo_text(input)?;
     let info = info.as_deref();
     if let Some(want) = opts.page
         && let Some(n) = info.and_then(parse_pdfinfo_pages)
@@ -243,8 +248,7 @@ fn raster_pages(
     }
     cmd.arg(input).arg(&prefix);
 
-    let result = interrupt::run(&mut cmd)
-        .map_err(|e| TummlerError::PdfError(format!("pdftoppm failed to start: {e}")))?;
+    let result = interrupt::run(&mut cmd)?;
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);
@@ -292,6 +296,7 @@ fn pdf_to_document(
     if soffice_writer_target(target) && deps::soffice_bin().is_some() {
         match soffice::convert_pdf_import(input, output, target) {
             Ok(()) => return Ok(()),
+            Err(e @ TummlerError::TimedOut(_)) => return Err(e),
             Err(e) => {
                 if opts.verbose {
                     eprintln!("  soffice PDF import failed, falling back to text: {e}");
@@ -316,8 +321,7 @@ fn pdftotext(input: &Path, output: &Path, opts: &ConvertOpts<'_>) -> Result<(), 
 
     let mut cmd = Command::new("pdftotext");
     cmd.args(["-layout", "-nopgbrk"]).arg(input).arg(output);
-    let result = interrupt::run(&mut cmd)
-        .map_err(|e| TummlerError::PdfError(format!("pdftotext failed to start: {e}")))?;
+    let result = interrupt::run(&mut cmd)?;
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);
@@ -351,8 +355,7 @@ fn pandoc_plain(
     for a in document::pandoc_strip_args(opts.strip_meta) {
         cmd.arg(a);
     }
-    let result = interrupt::run(&mut cmd)
-        .map_err(|e| TummlerError::DocumentError(e.to_string()))?;
+    let result = interrupt::run(&mut cmd)?;
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);

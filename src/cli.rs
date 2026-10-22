@@ -16,6 +16,7 @@ Examples:
   tummler ./photos webp -r -o ./out --preserve-structure
   tummler photo.png jpg --preserve-mtime
   tummler photo.png webp --suffix _opt
+  tummler ./photos webp -r --timeout 120
   tummler photo.heic jpg --max 1920
   tummler table.xlsx csv
   tummler table.csv xlsx
@@ -131,6 +132,10 @@ pub struct Cli {
     #[arg(long = "strip-meta")]
     pub strip_meta: bool,
 
+    /// Kill one file's converter after SECS (default: no limit)
+    #[arg(long = "timeout", value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..))]
+    pub timeout: Option<u64>,
+
     /// Verbose log on stderr
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
     pub verbose: bool,
@@ -236,5 +241,9 @@ mod tests {
         assert_eq!(c.suffix.as_deref(), Some("_opt"));
         let c = Cli::try_parse_from(["tummler", "--prefix", "opt_", "a.png", "webp"]).unwrap();
         assert_eq!(c.prefix.as_deref(), Some("opt_"));
+
+        let c = Cli::try_parse_from(["tummler", "--timeout", "120", "a.mkv", "mp4"]).unwrap();
+        assert_eq!(c.timeout, Some(120));
+        assert!(Cli::try_parse_from(["tummler", "--timeout", "0", "a.mkv", "mp4"]).is_err());
     }
 }

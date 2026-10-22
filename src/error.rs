@@ -32,6 +32,9 @@ pub enum TummlerError {
     #[error("I/O error: {0}")]
     IoError(String),
 
+    #[error("timed out after {0}s")]
+    TimedOut(u64),
+
     #[error("{0}")]
     Other(String),
 }

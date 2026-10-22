@@ -108,8 +108,7 @@ fn convert_office_filter(
         .arg(&outdir)
         .arg(input);
 
-    let result = interrupt::run(&mut cmd)
-        .map_err(|e| TummlerError::Other(format!("LibreOffice failed to start: {e}")))?;
+    let result = interrupt::run(&mut cmd)?;
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         let stdout = String::from_utf8_lossy(&result.stdout);

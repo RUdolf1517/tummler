@@ -104,6 +104,7 @@ tummler ./photos avif --overwrite
 tummler ./photos webp -r -o ./out -j 8
 tummler ./photos webp -r -o ./out --preserve-structure   # keep vacation/, birthday/
 tummler ./photos jpeg -r -n                # dry-run
+tummler ./photos webp -r --timeout 120     # kill one file after 120s, continue
 tummler ./photos webp -r --include '*.png' --exclude '*_raw*' --skip-newer -o ./out
 tummler ./photos webp -r --exclude '**/.git/**' --exclude '**/node_modules/**'
 tummler photo.png webp --suffix _opt       # → photo_opt.webp
@@ -210,6 +211,7 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --resize <SPEC>       50% | 800x | x600 | 800x600
       --page <N>            PDF page (1-based; default: all pages in one image)
       --strip-meta          drop EXIF/GPS/author (ffmpeg; pandoc title/author/date)
+      --timeout <SECS>      kill one file after SECS (default: no limit)
       --sheet <NAME|N>      spreadsheet sheet (name, 1-based index, or *)
       --all-sheets          every sheet → table-Sheet1.csv
   -j, --jobs <N>            parallel jobs (0 = CPUs)

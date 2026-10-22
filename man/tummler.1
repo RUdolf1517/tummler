@@ -151,6 +151,15 @@ pandoc clears title/author/date.
 Images already drop EXIF on convert.
 LibreOffice and a PDF copy are unchanged.
 .TP
+.BI \-\-timeout " SECS
+Kill that file's converter after
+.I SECS
+(ffmpeg, pandoc, pdftoppm, soffice). Default: no limit.
+On timeout: kill the process group, log on stderr, continue the batch.
+Summary shows
+.BR timed\ out ;
+exit 1.
+.TP
 .BR \-j ", " \-\-jobs =\fIN
 Parallel jobs. 0 means the number of CPUs (media capped at 2).
 .TP
@@ -236,6 +245,8 @@ tummler ./photos webp \-r \-o ./out \-\-preserve\-structure
 tummler photo.png jpg \-\-preserve\-mtime
 .TQ
 tummler photo.png webp \-\-suffix _opt
+.TQ
+tummler ./photos webp \-r \-\-timeout 120
 .TQ
 tummler table.xlsx csv
 .TQ

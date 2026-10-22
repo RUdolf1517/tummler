@@ -29,8 +29,7 @@ pub fn convert_document(
         cmd.arg(a);
     }
 
-    let result = interrupt::run(&mut cmd)
-        .map_err(|e| TummlerError::DocumentError(e.to_string()))?;
+    let result = interrupt::run(&mut cmd)?;
 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);

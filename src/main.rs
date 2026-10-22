@@ -11,6 +11,7 @@ mod util;
 
 use clap::{CommandFactory, Parser};
 use convert::ConvertOpts;
+use error::TummlerError;
 use geom::Geometry;
 use rayon::prelude::*;
 use std::io::{self, Read, Write};
@@ -358,6 +359,7 @@ fn run(mut cli: cli::Cli) -> i32 {
 
     let success = AtomicUsize::new(0);
     let fail_extra = AtomicUsize::new(0);
+    let timed_out = AtomicUsize::new(0);
     let skipped = AtomicUsize::new(0);
     let bytes_in = AtomicU64::new(0);
     let bytes_out = AtomicU64::new(0);
@@ -376,6 +378,7 @@ fn run(mut cli: cli::Cli) -> i32 {
         ffmpeg_threads,
         page: cli.page,
         strip_meta: cli.strip_meta,
+        timeout: cli.timeout,
     };
 
     let run_one = |t: &Task| {
@@ -400,6 +403,10 @@ fn run(mut cli: cli::Cli) -> i32 {
             TaskResult::Err(e) => {
                 ui::error(format!("{}: {e}", t.label_in));
                 fail_extra.fetch_add(1, Ordering::Relaxed);
+            }
+            TaskResult::TimedOut(secs) => {
+                ui::error(format!("{}: timed out after {secs}s", t.label_in));
+                timed_out.fetch_add(1, Ordering::Relaxed);
             }
         }
     };
@@ -472,16 +479,17 @@ fn run(mut cli: cli::Cli) -> i32 {
     failed += fail_extra.load(Ordering::Relaxed);
     let success = success.load(Ordering::Relaxed);
     let skipped = skipped.load(Ordering::Relaxed);
+    let timed_out = timed_out.load(Ordering::Relaxed);
     let bytes_in = bytes_in.load(Ordering::Relaxed);
     let bytes_out = bytes_out.load(Ordering::Relaxed);
 
     if !cli.quiet {
         ui::info(util::format_summary(
-            success, skipped, failed, bytes_in, bytes_out,
+            success, skipped, failed, timed_out, bytes_in, bytes_out,
         ));
     }
 
-    if failed > 0 {
+    if failed > 0 || timed_out > 0 {
         ui::EXIT_FAIL
     } else {
         ui::EXIT_OK
@@ -492,6 +500,7 @@ enum TaskResult {
     Ok { bin: u64, bout: u64 },
     Skip,
     Err(String),
+    TimedOut(u64),
 }
 
 struct JobSpec<'a> {
@@ -508,12 +517,14 @@ struct JobSpec<'a> {
     ffmpeg_threads: usize,
     page: Option<u32>,
     strip_meta: bool,
+    timeout: Option<u64>,
 }
 
 fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
     if spec.skip_newer && util::output_up_to_date(&t.input, &t.output) {
         return TaskResult::Skip;
     }
+    let _deadline = interrupt::begin_file(spec.timeout);
     let bin = util::file_size(&t.input);
     let overwrite = spec.overwrite || (spec.skip_newer && t.output.exists());
     let opts = ConvertOpts {
@@ -541,6 +552,7 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
                 bout: util::file_size(&t.output),
             }
         }
+        Err(TummlerError::TimedOut(secs)) => TaskResult::TimedOut(secs),
         Err(e) => TaskResult::Err(e.to_string()),
     }
 }
@@ -705,7 +717,11 @@ fn run_stdio(
         strip_meta: cli.strip_meta,
     };
 
-    match convert::convert_file(&input_path, &output, target_ext, &opts) {
+    let result = {
+        let _deadline = interrupt::begin_file(cli.timeout);
+        convert::convert_file(&input_path, &output, target_ext, &opts)
+    };
+    match result {
         Ok(()) => {
             if cli.preserve_mtime
                 && !stdout_mode
@@ -723,8 +739,16 @@ fn run_stdio(
             ui::finish_ok(spin.as_ref(), format!("{label_in} → {label_out}"));
             if !cli.quiet {
                 let bout = util::file_size(&output);
-                ui::info(util::format_summary(success, 0, failed, bin, bout));
+                ui::info(util::format_summary(success, 0, failed, 0, bin, bout));
             }
+        }
+        Err(TummlerError::TimedOut(secs)) => {
+            ui::finish_clear(spin.as_ref());
+            ui::error(format!("{label_in}: timed out after {secs}s"));
+            if !cli.quiet {
+                ui::info(util::format_summary(0, 0, 0, 1, 0, 0));
+            }
+            return ui::EXIT_FAIL;
         }
         Err(e) => {
             ui::finish_clear(spin.as_ref());
