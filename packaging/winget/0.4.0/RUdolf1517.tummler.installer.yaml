@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+PackageIdentifier: RUdolf1517.tummler
+PackageVersion: 0.4.0
+InstallerLocale: en-US
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: tummler.exe
+    PortableCommandAlias: tummler
+ReleaseDate: 2026-10-22
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/RUdolf1517/tummler/releases/download/v0.4.0/tummler-x86_64-pc-windows-msvc.zip
+    InstallerSha256: F0491498F8ED64E5F7B897CDA5CD0399C8021F5A2A9CBC94FC46172C9617F797
+ManifestType: installer
+ManifestVersion: 1.10.0
