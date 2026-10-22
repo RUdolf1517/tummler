@@ -208,7 +208,8 @@ fn refresh_path() {
     let path = String::from_utf8_lossy(&out.stdout);
     let path = path.trim();
     if !path.is_empty() {
-        // PATH from the registry after winget; no other threads should be converting yet.
+        // SAFETY: check-deps / prefetch runs before rayon workers; nothing else
+        // reads PATH in this process at this moment.
         unsafe { std::env::set_var("PATH", path) };
     }
 }

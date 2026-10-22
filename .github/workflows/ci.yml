@@ -73,4 +73,21 @@ jobs:
       - name: cargo test
         run: cargo test --color=always
       - name: cargo clippy
-        run: cargo clippy --all-targets --color=always -- -D warnings
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets --color=always -- -D warnings 2>&1 | tee cargo-clippy.log
+      - name: Publish clippy lints
+        if: failure()
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import pathlib, re
+          p = pathlib.Path("cargo-clippy.log")
+          if not p.exists():
+              raise SystemExit(0)
+          t = re.sub(r"\x1b\[[0-9;]*m", "", p.read_text(errors="replace"))
+          hits = [ln[:220] for ln in t.splitlines() if "error:" in ln or "warning:" in ln or "--> " in ln]
+          for ln in hits[-60:]:
+              print("::error::" + ln)
+          PY
