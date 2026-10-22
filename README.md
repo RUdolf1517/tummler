@@ -85,7 +85,30 @@ cargo install --git https://github.com/RUdolf1517/tummler
 
 macOS (Apple Silicon and Intel) and Linux, x86_64 and ARM.
 
-ffmpeg (video/HEIC), pandoc (documents), poppler (PDF → png/docx) — tummler offers to install them in a TTY (`tummler --check-deps`, or the first conversion that needs them). LibreOffice (`soffice`) is used only if already on PATH. Never asked for, never installed.
+### Dependencies
+
+Images, archives, spreadsheets: nothing extra.
+
+Optional tools — tummler offers to install them in a TTY (`tummler --check-deps`, or the first conversion that needs them). `-y` installs without asking. `--no-auto-install` skips the offer. Linux uses apt/dnf before linuxbrew.
+
+```bash
+# macOS
+brew install ffmpeg pandoc poppler
+
+# Debian/Ubuntu
+sudo apt install ffmpeg pandoc poppler-utils
+
+# Fedora
+sudo dnf install ffmpeg pandoc poppler-utils
+
+tummler --check-deps
+```
+
+- **ffmpeg** — video, HEIC, AVIF, lossy webp
+- **pandoc** — documents
+- **poppler** (`pdftoppm` / `pdftotext`) — PDF → png/jpg/docx
+
+LibreOffice (`soffice`): slides, Word/ODT → pdf, PDF → docx layout. Used only if already on PATH. Never asked for, never installed.
 
 <details>
 <summary>From source</summary>
