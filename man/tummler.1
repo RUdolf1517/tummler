@@ -80,7 +80,7 @@ Lossy quality 1–100.
 Replace existing files.
 .TP
 .BR \-r ", " \-\-recursive
-Walk directories.
+Walk directories. Does not follow symbolic links.
 .TP
 .B \-\-preserve\-structure
 With
@@ -100,9 +100,17 @@ directory.
 .TP
 .BI \-\-include " GLOB
 Keep matching files (repeatable). Matches name or path.
+.B *
+does not cross
+.BR / ;
+.B **
+does (e.g.
+.B **/.git/**
+).
 .TP
 .BI \-\-exclude " GLOB
-Drop matching files (repeatable).
+Drop matching files (repeatable). Same glob rules as
+.BR \-\-include .
 .TP
 .B \-\-skip\-newer
 Skip if the output exists and is not older than the input.
@@ -111,6 +119,18 @@ Skip if the output exists and is not older than the input.
 Copy the input modification time onto the output (like
 .BR cp " " \-p ).
 Ignored for stdin/stdout.
+.TP
+.BI \-\-prefix " STR
+Prepend to the output stem.
+.TP
+.BI \-\-suffix " STR
+Append to the output stem:
+.B photo.png webp \-\-suffix _opt
+→
+.IR photo_opt.webp .
+No path separators. Ignored with
+.B \-o
+file or stdout.
 .TP
 .BI \-\-max " PX
 Longest side in pixels (images/video). Never upscales.
@@ -214,6 +234,8 @@ tummler ./photos webp \-r \-\-skip\-newer \-o ./out
 tummler ./photos webp \-r \-o ./out \-\-preserve\-structure
 .TQ
 tummler photo.png jpg \-\-preserve\-mtime
+.TQ
+tummler photo.png webp \-\-suffix _opt
 .TQ
 tummler table.xlsx csv
 .TQ

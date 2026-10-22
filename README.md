@@ -105,7 +105,11 @@ tummler ./photos webp -r -o ./out -j 8
 tummler ./photos webp -r -o ./out --preserve-structure   # keep vacation/, birthday/
 tummler ./photos jpeg -r -n                # dry-run
 tummler ./photos webp -r --include '*.png' --exclude '*_raw*' --skip-newer -o ./out
+tummler ./photos webp -r --exclude '**/.git/**' --exclude '**/node_modules/**'
+tummler photo.png webp --suffix _opt       # → photo_opt.webp
 ```
+
+`-r` does not follow symlinks. `--include` / `--exclude`: `*` does not cross `/`; `**` does (name or full path).
 
 TTY: spinner for one file, progress bar for a batch. `--quiet` and pipes stay silent. Then a size summary.
 
@@ -194,12 +198,14 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
   -o, --output <PATH>       file or directory. "-" = stdout
   -q, --quality <1-100>     lossy quality
       --overwrite, --force  replace existing files
-  -r, --recursive           walk directories
+  -r, --recursive           walk directories (does not follow symlinks)
       --preserve-structure  keep subdirs under -o (needs -r). Default flattens
-      --include <GLOB>      keep matching files (repeatable)
-      --exclude <GLOB>      drop matching files (repeatable)
+      --include <GLOB>      keep matching files (repeatable; * or **)
+      --exclude <GLOB>      drop matching files (repeatable; * or **)
       --skip-newer          skip if output is up to date
       --preserve-mtime      copy input mtime onto the output (like cp -p)
+      --prefix <STR>        prepend to the output stem
+      --suffix <STR>        append to the output stem (`photo_opt.webp`)
       --max <PX>            longest side (images/video)
       --resize <SPEC>       50% | 800x | x600 | 800x600
       --page <N>            PDF page (1-based; default: all pages in one image)

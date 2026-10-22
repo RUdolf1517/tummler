@@ -460,10 +460,42 @@ fn output_stem(path: &Path) -> String {
     })
 }
 
+/// Prefix/suffix glued onto the output stem (`photo` + suffix `_opt` → `photo_opt.webp`).
+#[derive(Clone, Copy)]
+pub struct StemAffix<'a> {
+    pub prefix: &'a str,
+    pub suffix: &'a str,
+}
+
+impl StemAffix<'static> {
+    pub const NONE: Self = Self {
+        prefix: "",
+        suffix: "",
+    };
+}
+
+/// Empty is fine (flag unused). `/`, `\\`, `.`, `..` are not.
+pub fn validate_affix(flag: &str, s: &str) -> Result<(), String> {
+    if s.is_empty() {
+        return Ok(());
+    }
+    if s.contains('/') || s.contains('\\') || s.contains('\0') {
+        return Err(format!("--{flag} cannot contain a path separator"));
+    }
+    if s == "." || s == ".." {
+        return Err(format!("--{flag} cannot be {s}"));
+    }
+    Ok(())
+}
+
+fn affixed_stem(path: &Path, affix: StemAffix<'_>) -> String {
+    format!("{}{}{}", affix.prefix, output_stem(path), affix.suffix)
+}
+
 /// Same relative path, target extension (`vacation/photo.jpg` + webp → `vacation/photo.webp`).
-pub fn retarget_ext(path: &Path, target_ext: &str) -> PathBuf {
+pub fn retarget_ext(path: &Path, target_ext: &str, affix: StemAffix<'_>) -> PathBuf {
     let target_ext = output_extension(target_ext);
-    let name = format!("{}.{}", output_stem(path), target_ext);
+    let name = format!("{}.{}", affixed_stem(path, affix), target_ext);
     match path.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.join(name),
         _ => PathBuf::from(name),
@@ -482,6 +514,7 @@ pub fn resolve_output_path(
     output_arg: Option<&Path>,
     multiple_inputs: bool,
     structure_root: Option<&Path>,
+    affix: StemAffix<'_>,
 ) -> Result<PathBuf, String> {
     let target_ext = output_extension(target_ext);
     let target_ext_with_dot = format!(".{target_ext}");
@@ -498,12 +531,20 @@ pub fn resolve_output_path(
         if is_dir_hint {
             let name = if let Some(root) = structure_root {
                 if let Some(rel) = rel_under(root, input) {
-                    retarget_ext(&rel, &target_ext)
+                    retarget_ext(&rel, &target_ext, affix)
                 } else {
-                    PathBuf::from(format!("{}{}", output_stem(input), target_ext_with_dot))
+                    PathBuf::from(format!(
+                        "{}{}",
+                        affixed_stem(input, affix),
+                        target_ext_with_dot
+                    ))
                 }
             } else {
-                PathBuf::from(format!("{}{}", output_stem(input), target_ext_with_dot))
+                PathBuf::from(format!(
+                    "{}{}",
+                    affixed_stem(input, affix),
+                    target_ext_with_dot
+                ))
             };
             return Ok(out.join(name));
         }
@@ -530,7 +571,11 @@ pub fn resolve_output_path(
     }
 
     let parent = input.parent().unwrap_or_else(|| Path::new("."));
-    Ok(parent.join(format!("{}{}", output_stem(input), target_ext_with_dot)))
+    Ok(parent.join(format!(
+        "{}{}",
+        affixed_stem(input, affix),
+        target_ext_with_dot
+    )))
 }
 
 fn strip_double_ext_stem(path: &Path) -> Option<String> {
@@ -554,6 +599,7 @@ pub fn collect_inputs(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
             files.push(input.clone());
         } else if input.is_dir() {
             if recursive {
+                // follow_links defaults to false: do not walk through symlinks.
                 for entry in walkdir::WalkDir::new(input).into_iter().filter_map(|e| e.ok()) {
                     if entry.file_type().is_file() {
                         let p = entry.path().to_path_buf();
@@ -786,33 +832,35 @@ mod tests {
         assert!(
             man.contains("preserve-structure") || man.contains("preserve\\-structure")
         );
+        assert!(man.contains("suffix"));
+        assert!(man.contains("symbolic links") || man.contains("symlinks"));
     }
 
     #[test]
     fn test_resolve_no_output() {
         let input = Path::new("/tmp/photo.png");
-        let out = resolve_output_path(input, "jpg", None, false, None).unwrap();
+        let out = resolve_output_path(input, "jpg", None, false, None, StemAffix::NONE).unwrap();
         assert_eq!(out, Path::new("/tmp/photo.jpg"));
     }
 
     #[test]
     fn test_resolve_jpeg_keeps_jpeg() {
         let input = Path::new("/tmp/photo.png");
-        let out = resolve_output_path(input, "jpeg", None, false, None).unwrap();
+        let out = resolve_output_path(input, "jpeg", None, false, None, StemAffix::NONE).unwrap();
         assert_eq!(out, Path::new("/tmp/photo.jpeg"));
     }
 
     #[test]
     fn test_resolve_with_dir() {
         let input = Path::new("/tmp/a.png");
-        let out = resolve_output_path(input, "webp", Some(Path::new("/out")), true, None).unwrap();
+        let out = resolve_output_path(input, "webp", Some(Path::new("/out")), true, None, StemAffix::NONE).unwrap();
         assert_eq!(out, Path::new("/out/a.webp"));
     }
 
     #[test]
     fn test_resolve_tar_gz_stem() {
         let input = Path::new("/tmp/Archive.TAR.GZ");
-        let out = resolve_output_path(input, "zip", None, false, None).unwrap();
+        let out = resolve_output_path(input, "zip", None, false, None, StemAffix::NONE).unwrap();
         assert_eq!(out, Path::new("/tmp/Archive.zip"));
     }
 
@@ -861,6 +909,7 @@ mod tests {
             Some(Path::new("-")),
             false,
             None,
+            StemAffix::NONE,
         )
         .unwrap();
         assert_eq!(out, Path::new("-"));
@@ -908,6 +957,9 @@ mod tests {
         assert!(glob_match("*_raw*", "img_raw_1.png"));
         assert!(glob_match("photos/*", "photos/a.png"));
         assert!(glob_match("**/*.png", "a/b/c.png"));
+        assert!(glob_match("**/.git/**", "proj/.git/objects/pack"));
+        assert!(glob_match("**/node_modules/**", "app/node_modules/x/index.js"));
+        assert!(!glob_match("**/node_modules/**", "app/src/index.js"));
         assert!(path_matches_glob(Path::new("dir/a.png"), "*.png"));
         assert!(!passes_filters(
             Path::new("a.jpg"),
@@ -978,8 +1030,8 @@ mod tests {
         let a = Path::new("photos/vacation/photo.jpg");
         let b = Path::new("photos/birthday/photo.jpg");
         let out = Path::new("out");
-        let ra = resolve_output_path(a, "webp", Some(out), true, None).unwrap();
-        let rb = resolve_output_path(b, "webp", Some(out), true, None).unwrap();
+        let ra = resolve_output_path(a, "webp", Some(out), true, None, StemAffix::NONE).unwrap();
+        let rb = resolve_output_path(b, "webp", Some(out), true, None, StemAffix::NONE).unwrap();
         assert_eq!(ra, Path::new("out/photo.webp"));
         assert_eq!(rb, Path::new("out/photo.webp"));
     }
@@ -990,8 +1042,8 @@ mod tests {
         let a = Path::new("photos/vacation/photo.jpg");
         let b = Path::new("photos/birthday/photo.jpg");
         let out = Path::new("out");
-        let ra = resolve_output_path(a, "webp", Some(out), true, Some(root)).unwrap();
-        let rb = resolve_output_path(b, "webp", Some(out), true, Some(root)).unwrap();
+        let ra = resolve_output_path(a, "webp", Some(out), true, Some(root), StemAffix::NONE).unwrap();
+        let rb = resolve_output_path(b, "webp", Some(out), true, Some(root), StemAffix::NONE).unwrap();
         assert_eq!(ra, Path::new("out/vacation/photo.webp"));
         assert_eq!(rb, Path::new("out/birthday/photo.webp"));
         assert_eq!(
@@ -1000,7 +1052,8 @@ mod tests {
                 "webp",
                 Some(out),
                 true,
-                Some(root)
+                Some(root),
+                StemAffix::NONE,
             )
             .unwrap(),
             Path::new("out/photo.webp")
@@ -1019,12 +1072,12 @@ mod tests {
         assert_eq!(structure_root_for(g, &originals), Some(Path::new("b")));
         let out = Path::new("out");
         assert_eq!(
-            resolve_output_path(f, "jpg", Some(out), true, structure_root_for(f, &originals))
+            resolve_output_path(f, "jpg", Some(out), true, structure_root_for(f, &originals), StemAffix::NONE)
                 .unwrap(),
             Path::new("out/vacation/photo.jpg")
         );
         assert_eq!(
-            resolve_output_path(g, "jpg", Some(out), true, structure_root_for(g, &originals))
+            resolve_output_path(g, "jpg", Some(out), true, structure_root_for(g, &originals), StemAffix::NONE)
                 .unwrap(),
             Path::new("out/vacation/photo.jpg")
         );
@@ -1036,8 +1089,45 @@ mod tests {
         assert!(structure_root_for(Path::new("photos/vacation/photo.jpg"), &originals).is_none());
         assert!(rel_under(Path::new("photos"), Path::new("other/x.jpg")).is_none());
         assert_eq!(
-            retarget_ext(Path::new("vacation/archive.tar.gz"), "zip"),
+            retarget_ext(Path::new("vacation/archive.tar.gz"), "zip", StemAffix::NONE),
             Path::new("vacation/archive.zip")
         );
+    }
+
+    #[test]
+    fn suffix_prefix_on_stem_not_dirs() {
+        let affix = StemAffix {
+            prefix: "opt_",
+            suffix: "_small",
+        };
+        let out = resolve_output_path(
+            Path::new("photos/vacation/photo.jpg"),
+            "webp",
+            None,
+            false,
+            None,
+            affix,
+        )
+        .unwrap();
+        assert_eq!(out, Path::new("photos/vacation/opt_photo_small.webp"));
+
+        let root = Path::new("photos");
+        let out = resolve_output_path(
+            Path::new("photos/vacation/photo.jpg"),
+            "webp",
+            Some(Path::new("out")),
+            true,
+            Some(root),
+            StemAffix {
+                prefix: "",
+                suffix: "_opt",
+            },
+        )
+        .unwrap();
+        assert_eq!(out, Path::new("out/vacation/photo_opt.webp"));
+
+        assert!(validate_affix("suffix", "_opt").is_ok());
+        assert!(validate_affix("suffix", "a/b").is_err());
+        assert!(validate_affix("prefix", "..").is_err());
     }
 }

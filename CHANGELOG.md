@@ -4,6 +4,8 @@
 
 - `--preserve-mtime`: copy the input's modification time onto the output (like `cp -p`)
 - `--preserve-structure`: with `-r -o DIR`, keep `vacation/photo.jpg` → `DIR/vacation/photo.webp` (default still flattens)
+- `--prefix` / `--suffix`: glue onto the output stem (`photo.png webp --suffix _opt` → `photo_opt.webp`). No path separators. Ignored with `-o` file or stdout
+- Docs: `-r` does not follow symlinks; `--include`/`--exclude` already accept `**` (`**/.git/**`)
 - ffmpeg/pandoc/poppler failures: one-line `hint:` for known stderr (LaTeX, missing codec, corrupt input, …); raw log kept
 - Homebrew: 0.3.3 bottles
 

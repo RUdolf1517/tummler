@@ -15,6 +15,7 @@ Examples:
   tummler ./photos webp -r --include '*.png' --skip-newer
   tummler ./photos webp -r -o ./out --preserve-structure
   tummler photo.png jpg --preserve-mtime
+  tummler photo.png webp --suffix _opt
   tummler photo.heic jpg --max 1920
   tummler table.xlsx csv
   tummler table.csv xlsx
@@ -105,6 +106,14 @@ pub struct Cli {
     /// Copy the input's modification time onto the output (like cp -p)
     #[arg(long = "preserve-mtime")]
     pub preserve_mtime: bool,
+
+    /// Prepend to the output stem (`--prefix opt_` → `opt_photo.webp`)
+    #[arg(long = "prefix", value_name = "STR")]
+    pub prefix: Option<String>,
+
+    /// Append to the output stem (`--suffix _opt` → `photo_opt.webp`)
+    #[arg(long = "suffix", value_name = "STR")]
+    pub suffix: Option<String>,
 
     /// Longest side in pixels (images/video; keep aspect, never upscale)
     #[arg(long = "max", value_name = "PX", value_parser = clap::value_parser!(u32).range(1..))]
@@ -222,5 +231,10 @@ mod tests {
         .unwrap();
         assert!(c.preserve_structure);
         assert!(c.recursive);
+
+        let c = Cli::try_parse_from(["tummler", "--suffix", "_opt", "a.png", "webp"]).unwrap();
+        assert_eq!(c.suffix.as_deref(), Some("_opt"));
+        let c = Cli::try_parse_from(["tummler", "--prefix", "opt_", "a.png", "webp"]).unwrap();
+        assert_eq!(c.prefix.as_deref(), Some("opt_"));
     }
 }

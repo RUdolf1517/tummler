@@ -168,6 +168,34 @@ fn run(mut cli: cli::Cli) -> i32 {
     let stdout_mode = cli.output.as_deref().is_some_and(util::is_stdio)
         || (valid_inputs.len() == 1 && util::is_stdio(&valid_inputs[0]) && cli.output.is_none());
 
+    let prefix = cli.prefix.clone().unwrap_or_default();
+    let suffix = cli.suffix.clone().unwrap_or_default();
+    if let Err(e) = util::validate_affix("prefix", &prefix) {
+        ui::error(e);
+        return ui::EXIT_USAGE;
+    }
+    if let Err(e) = util::validate_affix("suffix", &suffix) {
+        ui::error(e);
+        return ui::EXIT_USAGE;
+    }
+    let apply_affix = !stdout_mode
+        && match cli.output.as_deref() {
+            None => true,
+            Some(p) if util::is_stdio(p) => false,
+            Some(p) => output_is_directory_hint(p, multiple),
+        };
+    if (!prefix.is_empty() || !suffix.is_empty()) && !apply_affix {
+        ui::warn("--prefix/--suffix ignored with -o file or stdout");
+    }
+    let affix = if apply_affix {
+        util::StemAffix {
+            prefix: &prefix,
+            suffix: &suffix,
+        }
+    } else {
+        util::StemAffix::NONE
+    };
+
     if stdout_mode && multiple {
         ui::error("stdout ('-') cannot be used with multiple inputs");
         return ui::EXIT_USAGE;
@@ -234,6 +262,7 @@ fn run(mut cli: cli::Cli) -> i32 {
                 split_sheets,
                 sheet_name,
                 output_structure_root(preserve_structure, input, &cli.inputs),
+                affix,
             ) {
                 Ok(p) => p,
                 Err(e) => {
@@ -280,6 +309,7 @@ fn run(mut cli: cli::Cli) -> i32 {
             split_sheets,
             sheet_name,
             output_structure_root(preserve_structure, input, &cli.inputs),
+            affix,
         ) {
             Ok(p) => p,
             Err(e) => {
@@ -546,6 +576,7 @@ fn expand_outputs(
     all_sheets: bool,
     sheet: Option<&str>,
     structure_root: Option<&Path>,
+    affix: util::StemAffix<'_>,
 ) -> Result<Vec<(PathBuf, Option<String>)>, String> {
     let base = util::resolve_output_path(
         input,
@@ -553,6 +584,7 @@ fn expand_outputs(
         output_arg,
         multiple_inputs,
         structure_root,
+        affix,
     )?;
     let is_sheet = util::classify_ext(&util::get_extension(input).unwrap_or_default())
         == util::FormatKind::Spreadsheet;
@@ -620,7 +652,14 @@ fn run_stdio(
             }
         }
     } else {
-        match util::resolve_output_path(input, target_ext, cli.output.as_deref(), false, None) {
+        match util::resolve_output_path(
+            input,
+            target_ext,
+            cli.output.as_deref(),
+            false,
+            None,
+            util::StemAffix::NONE,
+        ) {
             Ok(p) => p,
             Err(e) => {
                 ui::error(format!("{}: {e}", input.display()));
