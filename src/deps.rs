@@ -57,30 +57,39 @@ pub fn require_soffice() -> Result<PathBuf, String> {
 pub fn install_hint(bin: &str) -> String {
     match bin {
         "ffmpeg" => format!(
-            "Install ffmpeg:\n  {}  winget install -e --id {}\n  {}  brew install ffmpeg\n  {}  sudo apt install ffmpeg\n  {}  sudo dnf install ffmpeg\n  {}  https://ffmpeg.org/download.html",
+            "Install ffmpeg:\n  {}  winget install -e --id {}\n  {}  brew install {}\n  {}  sudo apt install {}\n  {}  sudo dnf install {}\n  {}  https://ffmpeg.org/download.html",
             "Windows:".bold(),
             winget_id("ffmpeg").unwrap(),
             "macOS:".bold(),
+            pkg_name("ffmpeg", true, false),
             "Debian/Ubuntu:".bold(),
+            pkg_name("ffmpeg", false, false),
             "Fedora:".bold(),
+            pkg_name("ffmpeg", false, false),
             "Website:".bold()
         ),
         "pandoc" => format!(
-            "Install pandoc:\n  {}  winget install -e --id {}\n  {}  brew install pandoc\n  {}  sudo apt install pandoc\n  {}  sudo dnf install pandoc\n  {}  https://pandoc.org/installing.html",
+            "Install pandoc:\n  {}  winget install -e --id {}\n  {}  brew install {}\n  {}  sudo apt install {}\n  {}  sudo dnf install {}\n  {}  https://pandoc.org/installing.html",
             "Windows:".bold(),
             winget_id("pandoc").unwrap(),
             "macOS:".bold(),
+            pkg_name("pandoc", true, false),
             "Debian/Ubuntu:".bold(),
+            pkg_name("pandoc", false, false),
             "Fedora:".bold(),
+            pkg_name("pandoc", false, false),
             "Website:".bold()
         ),
         "pdftoppm" | "pdftotext" => format!(
-            "Install poppler ({bin}):\n  {}  winget install -e --id {}\n  {}  brew install poppler\n  {}  sudo apt install poppler-utils\n  {}  sudo dnf install poppler-utils\n  {}  https://poppler.freedesktop.org/",
+            "Install poppler ({bin}):\n  {}  winget install -e --id {}\n  {}  brew install {}\n  {}  sudo apt install {}\n  {}  sudo dnf install {}\n  {}  https://poppler.freedesktop.org/",
             "Windows:".bold(),
             winget_id(bin).unwrap(),
             "macOS:".bold(),
+            pkg_name(bin, true, false),
             "Debian/Ubuntu:".bold(),
+            pkg_name(bin, false, false),
             "Fedora:".bold(),
+            pkg_name(bin, false, false),
             "Website:".bold()
         ),
         _ => format!("Install {bin} with your system package manager."),
