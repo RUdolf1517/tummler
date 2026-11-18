@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 — 2026-11-18
+
+- Harden archive conversion against ZIP symlinks and unsafe TAR entries; report traversal errors instead of silently omitting files
+- Reduce peak memory for multi-page PDF images and scaled JPEG decoding; keep atomic replacement on Windows and prevent XLSX sheet-name collisions
+- Keep fat LTO with opt-level 3 as the default; add an all-target release-profile benchmark workflow
+
 ## Unreleased
 
 ## 0.4.0 — 2026-10-22
