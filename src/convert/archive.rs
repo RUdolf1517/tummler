@@ -529,7 +529,7 @@ fn compress_file(input: &Path, output: &Path, ext: &str) -> Result<(), TummlerEr
 
 fn single_file_in(src_dir: &Path, ext: &str) -> Result<PathBuf, TummlerError> {
     let mut files: Vec<PathBuf> = Vec::new();
-    collect_files_recursive(src_dir, &mut files);
+    collect_files_recursive(src_dir, &mut files)?;
     let files: Vec<_> = files.into_iter().filter(|p| p.is_file()).collect();
     if files.is_empty() {
         return Err(TummlerError::ArchiveError(format!(
@@ -578,6 +578,11 @@ fn unpack_zip(input: &Path, dest: &Path) -> Result<(), TummlerError> {
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        // Refuse symlinks in this fresh temporary extraction tree; later
+        // entries must not be able to traverse one outside `dest`.
+        if file.is_symlink() {
+            continue;
+        }
         let Some(enclosed) = file.enclosed_name() else {
             continue;
         };
@@ -618,6 +623,10 @@ fn unpack_tar_archive<R: Read>(
         .map_err(|e| TummlerError::ArchiveError(e.to_string()))?
     {
         let mut ent = ent.map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
+        let kind = ent.header().entry_type();
+        if !kind.is_file() && !kind.is_dir() {
+            continue;
+        }
         ent.unpack_in(dest)
             .map_err(|e| TummlerError::ArchiveError(e.to_string()))?;
     }
@@ -705,7 +714,7 @@ fn pack_zip(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
     let dir_opts = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
 
     let mut files: Vec<PathBuf> = Vec::new();
-    collect_files_recursive(src_dir, &mut files);
+    collect_files_recursive(src_dir, &mut files)?;
 
     for path in &files {
         let name = path.strip_prefix(src_dir).unwrap_or(path);
@@ -800,18 +809,21 @@ fn pack_zst(src_dir: &Path, output: &Path) -> Result<(), TummlerError> {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-fn collect_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+fn collect_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), TummlerError> {
+    for entry in walkdir::WalkDir::new(dir) {
+        let entry = entry.map_err(|e| TummlerError::IoError(e.to_string()))?;
         let path = entry.path();
         if path != dir {
             out.push(path.to_path_buf());
         }
     }
+    Ok(())
 }
 
 fn append_dir_to_tar<W: Write>(builder: &mut tar::Builder<W>, src_dir: &Path, base: &Path) -> Result<(), TummlerError> {
     let entries = std::fs::read_dir(src_dir).map_err(|e| TummlerError::IoError(e.to_string()))?;
-    for entry in entries.filter_map(|e| e.ok()) {
+    for entry in entries {
+        let entry = entry.map_err(|e| TummlerError::IoError(e.to_string()))?;
         let path = entry.path();
         let name = path.strip_prefix(base).unwrap_or(&path);
         if path.is_dir() {
@@ -906,6 +918,35 @@ mod tests {
             std::fs::read(unpacked.path().join("dir/b.txt")).unwrap(),
             b"bbb"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn zip_symlink_cannot_escape_extraction_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("symlink.zip");
+        let file = File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default().unix_permissions(0o777);
+        zip.start_file("escape", options).unwrap();
+        zip.write_all(b"../").unwrap();
+        zip.start_file("escape/outside.txt", zip::write::SimpleFileOptions::default()).unwrap();
+        zip.write_all(b"outside").unwrap();
+        zip.finish().unwrap();
+
+        // Mark the first central-directory entry as a Unix symlink. The ZIP
+        // writer intentionally exposes only permission bits in its API.
+        let mut bytes = std::fs::read(&zip_path).unwrap();
+        let central = bytes.windows(4).position(|w| w == b"PK\x01\x02").unwrap();
+        let mode = (0o120777u32 << 16).to_le_bytes();
+        bytes[central + 38..central + 42].copy_from_slice(&mode);
+        std::fs::write(&zip_path, bytes).unwrap();
+
+        let dest = dir.path().join("extract");
+        std::fs::create_dir(&dest).unwrap();
+        unpack_zip(&zip_path, &dest).unwrap();
+        assert!(!dir.path().join("outside.txt").exists());
+        assert!(!std::fs::symlink_metadata(dest.join("escape")).unwrap().file_type().is_symlink());
     }
 
     #[test]

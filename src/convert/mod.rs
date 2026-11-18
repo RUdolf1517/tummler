@@ -250,18 +250,40 @@ pub fn convert_file(
 
     match result {
         Ok(()) => {
-            if let Err(e) = std::fs::rename(&staging, output) {
-                std::fs::copy(&staging, output).map_err(|e2| {
-                    let _ = std::fs::remove_file(&staging);
-                    TummlerError::IoError(format!("failed to save {}: {e}; {e2}", output.display()))
-                })?;
+            replace_output(&staging, output).map_err(|e| {
                 let _ = std::fs::remove_file(&staging);
-            }
+                TummlerError::IoError(format!("failed to save {}: {e}", output.display()))
+            })?;
             Ok(())
         }
         Err(e) => {
             let _ = std::fs::remove_file(&staging);
             Err(e)
         }
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_output(staging: &Path, output: &Path) -> std::io::Result<()> {
+    std::fs::rename(staging, output)
+}
+
+#[cfg(windows)]
+fn replace_output(staging: &Path, output: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    let staging: Vec<u16> = staging.as_os_str().encode_wide().chain(Some(0)).collect();
+    let output: Vec<u16> = output.as_os_str().encode_wide().chain(Some(0)).collect();
+    let ok = unsafe {
+        windows_sys::Win32::Storage::FileSystem::MoveFileExW(
+            staging.as_ptr(),
+            output.as_ptr(),
+            windows_sys::Win32::Storage::FileSystem::MOVEFILE_REPLACE_EXISTING
+                | windows_sys::Win32::Storage::FileSystem::MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if ok == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
     }
 }

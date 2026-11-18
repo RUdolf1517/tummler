@@ -391,12 +391,28 @@ fn write_data_cell(
     }
 }
 
+fn unique_excel_sheet_name(used: &mut HashSet<String>, name: &str) -> String {
+    const MAX: usize = 31;
+    let base = excel_sheet_name(name);
+    let mut index = 1usize;
+    loop {
+        let suffix = if index == 1 { String::new() } else { format!(" ({index})") };
+        let keep = MAX.saturating_sub(suffix.chars().count());
+        let candidate: String = base.chars().take(keep).collect::<String>() + &suffix;
+        let key = candidate.to_lowercase();
+        if used.insert(key) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
 fn add_named_sheet<'a>(
     workbook: &'a mut Workbook,
     used: &mut HashSet<String>,
     want: &str,
 ) -> Result<&'a mut Worksheet, TummlerError> {
-    let name = unique_filename(used, &excel_sheet_name(want));
+    let name = unique_excel_sheet_name(used, want);
     let ws = workbook.add_worksheet();
     ws.set_name(&name).map_err(map_xlsx)?;
     Ok(ws)
@@ -752,6 +768,19 @@ mod tests {
         let out = dir.path().join("e.csv");
         convert_spreadsheet(&input, &out, "csv", None).unwrap();
         assert_eq!(std::fs::read_to_string(&out).unwrap(), "");
+    }
+
+    #[test]
+    fn xlsx_sheet_names_are_unique_after_truncation_and_casefolding() {
+        let mut used = HashSet::new();
+        let a = unique_excel_sheet_name(&mut used, "abcdefghijklmnopqrstuvwxyz123456-A");
+        let b = unique_excel_sheet_name(&mut used, "abcdefghijklmnopqrstuvwxyz123456-B");
+        let c = unique_excel_sheet_name(&mut used, "ALPHA");
+        let d = unique_excel_sheet_name(&mut used, "alpha");
+        assert!(a.chars().count() <= 31);
+        assert!(b.chars().count() <= 31);
+        assert_ne!(a, b);
+        assert_ne!(c.to_lowercase(), d.to_lowercase());
     }
 
     #[test]

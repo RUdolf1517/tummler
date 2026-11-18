@@ -70,16 +70,8 @@ fn pdf_to_image(
         return emit_raster(&pngs[0], output, target, opts, geometry);
     }
 
-    let mut pages = Vec::with_capacity(pngs.len());
-    for p in &pngs {
-        let img = ::image::open(p).map_err(|e| TummlerError::ImageError(e.to_string()))?;
-        pages.push(if already_sized {
-            img
-        } else {
-            image::apply_geometry(img, opts.geometry)
-        });
-    }
-    let stacked = stack_pages(pages)?;
+    let geometry = if already_sized { &noop } else { opts.geometry };
+    let stacked = stack_page_files(&pngs, geometry)?;
     let stacked_path = tmp.path().join("stacked.png");
     stacked
         .save(&stacked_path)
@@ -116,6 +108,43 @@ fn emit_raster(
     image::convert_image(raster, output, opts.quality, geometry)
 }
 
+fn stack_page_files(
+    paths: &[PathBuf],
+    geometry: &Geometry,
+) -> Result<::image::DynamicImage, TummlerError> {
+    let mut dimensions = Vec::with_capacity(paths.len());
+    for path in paths {
+        let reader = ::image::ImageReader::open(path)
+            .map_err(|e| TummlerError::ImageError(e.to_string()))?
+            .with_guessed_format()
+            .map_err(|e| TummlerError::ImageError(e.to_string()))?;
+        let (w, h) = reader.into_dimensions()
+            .map_err(|e| TummlerError::ImageError(e.to_string()))?;
+        dimensions.push(geometry.target_size(w, h));
+    }
+    let width = dimensions.iter().map(|(w, _)| *w).max().unwrap_or(1).max(1);
+    let height = dimensions.iter().try_fold(0u32, |sum, (_, h)| sum.checked_add(*h))
+        .ok_or_else(|| TummlerError::PdfError("stacked PNG is too tall".into()))?;
+    let mut canvas = ::image::RgbImage::from_pixel(
+        width,
+        height.max(1),
+        ::image::Rgb([255, 255, 255]),
+    );
+    let mut y = 0u32;
+    for path in paths {
+        let img = ::image::open(path).map_err(|e| TummlerError::ImageError(e.to_string()))?;
+        let img = image::apply_geometry(img, geometry);
+        let rgb = match img {
+            ::image::DynamicImage::ImageRgb8(buf) => buf,
+            other => other.to_rgb8(),
+        };
+        ::image::imageops::replace(&mut canvas, &rgb, 0, i64::from(y));
+        y += rgb.height();
+    }
+    Ok(::image::DynamicImage::ImageRgb8(canvas))
+}
+
+#[cfg(test)]
 fn stack_pages(
     mut pages: Vec<::image::DynamicImage>,
 ) -> Result<::image::DynamicImage, TummlerError> {
