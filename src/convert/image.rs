@@ -2,7 +2,7 @@ use crate::error::TummlerError;
 use crate::geom::Geometry;
 use crate::util::{get_extension, is_svg, normalize_ext};
 use image::ImageDecoder;
-use std::io::{BufWriter, Cursor, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -59,9 +59,9 @@ fn load_jpeg_scaled(
     input: &Path,
     geometry: &Geometry,
 ) -> Result<Option<image::DynamicImage>, TummlerError> {
-    let bytes = std::fs::read(input).map_err(map_io)?;
     let (orientation, cw, ch) = {
-        let mut header = image::codecs::jpeg::JpegDecoder::new(Cursor::new(bytes.as_slice()))
+        let file = std::fs::File::open(input).map_err(map_io)?;
+        let mut header = image::codecs::jpeg::JpegDecoder::new(BufReader::new(file))
             .map_err(map_img)?;
         let orientation = header
             .orientation()
@@ -80,7 +80,8 @@ fn load_jpeg_scaled(
         return Ok(None);
     }
 
-    let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(bytes.as_slice()));
+    let file = std::fs::File::open(input).map_err(map_io)?;
+    let mut decoder = jpeg_decoder::Decoder::new(file);
     let (sw, sh) = decoder
         .scale(req_w as u16, req_h as u16)
         .map_err(map_img)?;
