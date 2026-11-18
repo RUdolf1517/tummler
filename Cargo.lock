@@ -1862,7 +1862,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tummler"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bzip2",
  "calamine",
