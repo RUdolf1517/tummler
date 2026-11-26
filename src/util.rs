@@ -712,7 +712,7 @@ pub fn print_supported_formats() {
     );
     println!(
         "     {}",
-        "pptx/ppsx/odp/ppt → pdf and between decks via soffice;  pptx ↔ ppsx copy;  odt/docx/md → pptx (pandoc)".cyan()
+        "pdf → pptx;  pptx/ppsx/odp/ppt → pdf and between decks via soffice;  pptx ↔ ppsx copy;  odt/docx/md → pptx (pandoc)".cyan()
     );
     println!();
 

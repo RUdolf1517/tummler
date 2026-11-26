@@ -20,7 +20,7 @@ fn soffice_writer_target(ext: &str) -> bool {
     matches!(ext, "docx" | "odt" | "rtf")
 }
 
-/// PDF → png/jpg/… (all pages stacked, or `--page N`) and PDF → docx/txt/… .
+/// Convert PDF to images, documents or a PowerPoint presentation.
 pub fn convert_pdf(
     input: &Path,
     output: &Path,
@@ -37,6 +37,10 @@ pub fn convert_pdf(
 
     if classify_ext(&target) == FormatKind::Image {
         return pdf_to_image(input, output, &target, opts);
+    }
+
+    if target == "pptx" {
+        return soffice::convert_pdf_import(input, output, &target);
     }
 
     if is_pdf_doc_target(&target) {
@@ -511,23 +515,6 @@ mod tests {
     }
 
     #[test]
-    fn pdf_to_pptx_is_unsupported() {
-        let dir = tempfile::tempdir().unwrap();
-        let input = write_sample(dir.path());
-        let out = dir.path().join("hello.pptx");
-        let g = Geometry::default();
-        let err = convert_pdf(&input, &out, "pptx", &opts(&g, true)).unwrap_err();
-        match err {
-            TummlerError::UnsupportedConversion(src, dst) => {
-                assert_eq!(src, "pdf");
-                assert_eq!(dst, "pptx");
-            }
-            other => panic!("expected UnsupportedConversion, got {other}"),
-        }
-        assert!(!out.exists());
-    }
-
-    #[test]
     fn pdf_to_png_first_page() {
         if !deps::is_available("pdftoppm") {
             return;
@@ -767,19 +754,43 @@ mod tests {
     }
 
     #[test]
-    fn convert_file_pdf_to_pptx_is_unsupported() {
+    fn convert_file_pdf_to_pptx() {
+        use std::io::Read;
+
         let dir = tempfile::tempdir().unwrap();
-        let input = write_sample(dir.path());
+        let input = dir.path().join("source pages.pdf");
         let out = dir.path().join("hello.pptx");
+        std::fs::write(&input, sample_pdf_pages(&["First page", "Second page"])).unwrap();
+
         let g = Geometry::default();
-        let err = crate::convert::convert_file(&input, &out, "pptx", &opts(&g, true)).unwrap_err();
-        match err {
-            TummlerError::UnsupportedConversion(src, dst) => {
-                assert_eq!(normalize_ext(&src), "pdf");
-                assert_eq!(dst, "pptx");
+        let prefetch = crate::convert::prefetch_deps(
+            std::slice::from_ref(&input),
+            "pptx",
+            None,
+            true,
+            false,
+        );
+        let result = crate::convert::convert_file(&input, &out, "pptx", &opts(&g, true));
+        if deps::soffice_bin().is_none() {
+            for error in [prefetch.unwrap_err(), result.unwrap_err()] {
+                assert!(matches!(error, TummlerError::DependencyMissing(bin, _) if bin == "soffice"));
             }
-            other => panic!("expected UnsupportedConversion, got {other}"),
+            assert!(!out.exists());
+            return;
         }
+
+        prefetch.unwrap();
+        result.unwrap();
+        let mut deck = zip::ZipArchive::new(std::fs::File::open(out).unwrap()).unwrap();
+        for (index, expected) in [(1, "First page"), (2, "Second page")] {
+            let mut xml = String::new();
+            deck.by_name(&format!("ppt/slides/slide{index}.xml"))
+                .unwrap()
+                .read_to_string(&mut xml)
+                .unwrap();
+            assert!(xml.contains(expected), "{xml}");
+        }
+        assert!(deck.by_name("ppt/slides/slide3.xml").is_err());
     }
 
     #[test]

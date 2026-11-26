@@ -35,7 +35,7 @@ pub fn copy_ooxml_deck(input: &Path, output: &Path) -> Result<(), TummlerError> 
     Ok(())
 }
 
-/// Already-installed soffice: Impress ↔ pdf / pptx / odp / ppt.
+/// Already-installed soffice: conversions between presentations, Impress → PDF, and PDF → PPTX.
 /// Never auto-installed. `pptx` ↔ `ppsx` is a copy, not this.
 pub fn needs_soffice(src: &str, dst: &str) -> bool {
     let src = normalize_ext(src);
@@ -43,7 +43,7 @@ pub fn needs_soffice(src: &str, dst: &str) -> bool {
     if src == dst || is_ooxml_copy(&src, &dst) {
         return false;
     }
-    is_impress(&src) && (is_impress(&dst) || dst == "pdf")
+    (is_impress(&src) && (is_impress(&dst) || dst == "pdf")) || (src == "pdf" && dst == "pptx")
 }
 
 /// Writer → pdf, or PDF → docx/odt/rtf: soffice if already on PATH.
@@ -62,13 +62,18 @@ pub fn convert_office(
     convert_office_filter(input, output, target_ext, None)
 }
 
-/// PDF → Writer via `--infilter=writer_pdf_import` (layout). Never auto-installs soffice.
+/// Import a PDF into Impress for PPTX, or Writer for document targets.
 pub fn convert_pdf_import(
     input: &Path,
     output: &Path,
     target_ext: &str,
 ) -> Result<(), TummlerError> {
-    convert_office_filter(input, output, target_ext, Some("writer_pdf_import"))
+    let filter = if target_ext == "pptx" {
+        "impress_pdf_import"
+    } else {
+        "writer_pdf_import"
+    };
+    convert_office_filter(input, output, target_ext, Some(filter))
 }
 
 fn convert_office_filter(
@@ -200,7 +205,7 @@ mod tests {
         assert!(!needs_soffice("odt", "pptx"));
         assert!(!needs_soffice("docx", "odt"));
         assert!(!needs_soffice("md", "pdf"));
-        assert!(!needs_soffice("pdf", "pptx"));
+        assert!(needs_soffice("pdf", "pptx"));
         assert!(!needs_soffice("pdf", "docx"));
         assert!(!needs_soffice("pptx", "pptx"));
         assert!(prefers_soffice("docx", "pdf"));

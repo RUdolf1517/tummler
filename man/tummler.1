@@ -174,7 +174,7 @@ Longest side in pixels (images/video). Never upscales.
 (images/video). Aspect kept.
 .TP
 .BI \-\-page " N
-PDF page (1-based). Default: all pages stacked in one image.
+PDF page for image output (1-based). Default: all pages stacked in one image.
 .TP
 .B \-\-strip\-meta
 Drop EXIF/GPS and author tags.
@@ -299,6 +299,7 @@ tummler video.mkv mp4 \-\-strip\-meta
 tummler \-\-check\-deps
 .TQ
 tummler slides.pptx pdf
+tummler slides.pdf pptx
 .TQ
 cat in.png | tummler \- jpeg > out.jpeg
 .SH DEPENDENCIES
@@ -317,6 +318,7 @@ Documents. A pandoc PDF needs LaTeX.
 .TP
 .B soffice
 Optional. Slides, and Word/PDF layout when already installed. Never auto-installed.
+PDF to PPTX requires LibreOffice Impress and creates one slide per page.
 .SH ENVIRONMENT
 .TP
 .B NO_COLOR

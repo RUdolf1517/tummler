@@ -146,10 +146,11 @@ tummler report.pdf png --page 2
 tummler table.xlsx csv --sheet 2          # 1-based; a sheet named "2" wins
 tummler table.csv xlsx                    # no LibreOffice
 tummler slides.pptx pdf                   # needs soffice already installed
+tummler slides.pdf pptx                   # needs LibreOffice Impress
 tummler slides.pptx ppsx                  # copy, no soffice
 ```
 
-JPEG `--max` / `--resize` decodes at 1/2, 1/4 or 1/8 (DCT) when that still covers the target. PDF → png/jpg: poppler, raster at `--max` / `--resize`. PDF → docx: soffice layout if present, else `pdftotext` + pandoc (text only). `pdf → pptx` is not supported.
+JPEG `--max` / `--resize` decodes at 1/2, 1/4 or 1/8 (DCT) when that still covers the target. PDF → png/jpg: poppler, raster at `--max` / `--resize`. PDF → docx: soffice layout if present, else `pdftotext` + pandoc (text only). PDF → PPTX uses LibreOffice Impress and creates one slide per page. Layout can vary with the source PDF and available fonts. Scanned pages stay images.
 
 </details>
 
@@ -171,7 +172,7 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --prefix / --suffix   glue onto the output stem
       --max <PX>            longest side (images/video)
       --resize <SPEC>       50% | 800x | x600 | 800x600
-      --page <N>            PDF page (1-based; default: all pages in one image)
+      --page <N>            PDF page for image output (1-based; default: all pages in one image)
       --strip-meta          drop EXIF/GPS/author
       --timeout <SECS>      kill one file after SECS
       --sheet <NAME|N>      spreadsheet sheet
@@ -193,7 +194,7 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
 | **Audio / video** | mp4 mkv mov webm gif · mp3 wav flac aac ogg m4a opus … | ffmpeg |
 | **Documents** | doc/docx/odt/rtf → pdf · md/html/tex/ipynb/… · pdf → png/jpg · pdf → docx | pandoc · poppler · optional soffice |
 | **Spreadsheets** | xlsx/xls/ods → csv txt · csv/xls/ods → xlsx | calamine · rust_xlsxwriter |
-| **Slides** | pptx/ppsx/odp/ppt → pdf and between decks · pptx ↔ ppsx copy · odt/docx/md → pptx | optional soffice · pandoc |
+| **Slides** | pdf → pptx · pptx/ppsx/odp/ppt → pdf and between decks · pptx ↔ ppsx copy · odt/docx/md → pptx | optional soffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
 
 ```bash

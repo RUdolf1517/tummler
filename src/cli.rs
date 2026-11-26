@@ -26,6 +26,7 @@ Examples:
   tummler table.xlsx csv --all-sheets
   tummler video.mkv mp4
   tummler slides.pptx pdf
+  tummler slides.pdf pptx
   tummler report.docx pdf
   tummler notes.odt pdf
   tummler notes.odt pptx
@@ -124,7 +125,7 @@ pub struct Cli {
     #[arg(long = "resize", value_name = "SPEC")]
     pub resize: Option<String>,
 
-    /// PDF page (1-based). Default: all pages stacked in one image
+    /// PDF page for image output (1-based). Default: all pages stacked in one image
     #[arg(long = "page", value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
     pub page: Option<u32>,
 
