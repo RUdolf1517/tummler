@@ -33,7 +33,7 @@ $ tummler backup.zip tar.gz
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RUdolf1517/tummler/main/install.sh | sh
 brew tap RUdolf1517/tummler https://github.com/RUdolf1517/tummler && brew install RUdolf1517/tummler/tummler
-cargo install --git https://github.com/RUdolf1517/tummler                          # Rust 1.99+
+cargo install tummler --locked                                                     # Rust 1.99+
 ```
 
 Linux (x86_64 and ARM), macOS (Apple silicon and Intel), Windows x64 (not ARM). Homebrew 6+ [tap trust](https://docs.brew.sh/Tap-Trust): the fully qualified name trusts only this formula. Short name afterwards: `brew trust --formula RUdolf1517/tummler/tummler && brew install tummler`.

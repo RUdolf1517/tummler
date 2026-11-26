@@ -1,12 +1,19 @@
 # Changelog
 
+## 0.5.0 — 2026-11-26
+
+- Convert JPG, PNG and HEIC to PDF, with `--merge` for multi-page albums.
+- Export XLSX and ODS to PDF using Calc print settings.
+- Export PDF pages to individual PNG or JPG files with `--all-pages`.
+- Make scanned PDFs searchable with `--ocr` and select OCR languages with `--ocr-lang`.
+- Convert PDF to editable PPTX with Impress or raster slides with `--raster` using Poppler and Pandoc.
+- Publish the Cargo package automatically for matching release tags.
+
 ## 0.4.1 — 2026-11-18
 
 - Harden archive conversion against ZIP symlinks and unsafe TAR entries; report traversal errors instead of silently omitting files
 - Reduce peak memory for multi-page PDF images and scaled JPEG decoding; keep atomic replacement on Windows and prevent XLSX sheet-name collisions
 - Keep fat LTO with opt-level 3 as the default; add an all-target release-profile benchmark workflow
-
-## Unreleased
 
 ## 0.4.0 — 2026-10-22
 
