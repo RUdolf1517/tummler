@@ -35,7 +35,7 @@ pub fn copy_ooxml_deck(input: &Path, output: &Path) -> Result<(), TummlerError> 
     Ok(())
 }
 
-/// Already-installed soffice: conversions between presentations, Impress → PDF, and PDF → PPTX.
+/// Conversions requiring an installed LibreOffice.
 /// Never auto-installed. `pptx` ↔ `ppsx` is a copy, not this.
 pub fn needs_soffice(src: &str, dst: &str) -> bool {
     let src = normalize_ext(src);
@@ -44,6 +44,7 @@ pub fn needs_soffice(src: &str, dst: &str) -> bool {
         return false;
     }
     (is_impress(&src) && (is_impress(&dst) || dst == "pdf")) || (src == "pdf" && dst == "pptx")
+        || (matches!(src.as_str(), "xlsx" | "ods") && dst == "pdf")
 }
 
 /// Writer → pdf, or PDF → docx/odt/rtf: soffice if already on PATH.
@@ -206,6 +207,9 @@ mod tests {
         assert!(!needs_soffice("docx", "odt"));
         assert!(!needs_soffice("md", "pdf"));
         assert!(needs_soffice("pdf", "pptx"));
+        assert!(needs_soffice("xlsx", "pdf"));
+        assert!(needs_soffice("ods", "pdf"));
+        assert!(!needs_soffice("xlsx", "csv"));
         assert!(!needs_soffice("pdf", "docx"));
         assert!(!needs_soffice("pptx", "pptx"));
         assert!(prefers_soffice("docx", "pdf"));

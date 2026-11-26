@@ -102,8 +102,9 @@ tummler --check-deps
 | --- | --- |
 | **ffmpeg** | video, HEIC, AVIF, lossy webp |
 | **pandoc** | documents (a pandoc PDF needs LaTeX) |
-| **poppler** | PDF → png/jpg/docx (`pdftoppm` / `pdftotext`) |
-| **soffice** | slides; Word/ODT → pdf layout; PDF → docx layout. **Never installed** |
+| **poppler** | PDF → images/raster slides/text (`pdfinfo`, `pdftoppm`, `pdftotext`) |
+| **soffice** | editable slide conversions and print-layout export for XLSX/ODS/Word/ODT. **Never auto-installed** |
+| **OCRmyPDF** | searchable PDF via `--ocr`; install it with Tesseract language data for `--ocr-lang` |
 
 ## Usage
 
@@ -146,11 +147,19 @@ tummler report.pdf png --page 2
 tummler table.xlsx csv --sheet 2          # 1-based; a sheet named "2" wins
 tummler table.csv xlsx                    # no LibreOffice
 tummler slides.pptx pdf                   # needs soffice already installed
-tummler slides.pdf pptx                   # needs LibreOffice Impress
+tummler slides.pdf pptx                   # editable import with LibreOffice Impress
+tummler slides.pdf pptx --raster          # one image per slide via Poppler and pandoc
+tummler report.pdf jpg --all-pages -o ./pages/
+tummler photo.jpg scan.png photo.heic pdf --merge -o scans.pdf
+tummler budget.xlsx pdf                   # uses LibreOffice Calc print settings
+tummler budget.ods pdf
+tummler scan.pdf pdf --ocr --ocr-lang eng+rus
 tummler slides.pptx ppsx                  # copy, no soffice
 ```
 
 JPEG `--max` / `--resize` decodes at 1/2, 1/4 or 1/8 (DCT) when that still covers the target. PDF → png/jpg: poppler, raster at `--max` / `--resize`. PDF → docx: soffice layout if present, else `pdftotext` + pandoc (text only). PDF → PPTX uses LibreOffice Impress and creates one slide per page. Layout can vary with the source PDF and available fonts. Scanned pages stay images.
+
+`--all-pages` names files `report-1.jpg`, `report-2.jpg`, and so on, with zero-padding for longer PDFs. `--merge` puts each image on its own PDF page in the input order. JPG and PNG work in Rust, and HEIC/HEIF needs FFmpeg. `--ocr` adds searchable text to scanned pages and skips pages with an existing text layer. With no output path, it writes `scan-ocr.pdf`. The default OCR language is English.
 
 </details>
 
@@ -173,6 +182,11 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
       --max <PX>            longest side (images/video)
       --resize <SPEC>       50% | 800x | x600 | 800x600
       --page <N>            PDF page for image output (1-based; default: all pages in one image)
+      --all-pages           separate PNG or JPG file for each PDF page
+      --merge               combine JPG/PNG/HEIC images into one PDF
+      --ocr                 add a searchable text layer to a scanned PDF
+      --ocr-lang <LANGS>    OCR languages, e.g. eng+rus (default: eng)
+      --raster              PDF → PPTX with one page image per slide
       --strip-meta          drop EXIF/GPS/author
       --timeout <SECS>      kill one file after SECS
       --sheet <NAME|N>      spreadsheet sheet
@@ -190,11 +204,11 @@ tummler [OPTIONS] <INPUT>... [FORMAT]
 
 | | Converts | Engine |
 |---|---|---|
-| **Images** | png jpg gif bmp ico tiff webp · svg→raster · avif/heic | Rust · resvg · ffmpeg |
+| **Images** | png jpg gif bmp ico tiff webp · svg→raster · avif/heic · jpg/png/heic → pdf | Rust · resvg · ffmpeg |
 | **Audio / video** | mp4 mkv mov webm gif · mp3 wav flac aac ogg m4a opus … | ffmpeg |
-| **Documents** | doc/docx/odt/rtf → pdf · md/html/tex/ipynb/… · pdf → png/jpg · pdf → docx | pandoc · poppler · optional soffice |
-| **Spreadsheets** | xlsx/xls/ods → csv txt · csv/xls/ods → xlsx | calamine · rust_xlsxwriter |
-| **Slides** | pdf → pptx · pptx/ppsx/odp/ppt → pdf and between decks · pptx ↔ ppsx copy · odt/docx/md → pptx | optional soffice · pandoc |
+| **Documents** | doc/docx/odt/rtf → pdf · md/html/tex/ipynb/… · pdf → png/jpg/docx · scanned PDF → searchable PDF | pandoc · poppler · OCRmyPDF · optional soffice |
+| **Spreadsheets** | xlsx/xls/ods → csv txt · csv/xls/ods → xlsx · xlsx/ods → pdf | calamine · rust_xlsxwriter · soffice for PDF |
+| **Slides** | pdf → pptx (editable or raster) · pptx/ppsx/odp/ppt → pdf and between decks · pptx ↔ ppsx copy · odt/docx/md → pptx | optional soffice · pandoc |
 | **Archives** | zip tar tar.gz tar.bz2 tar.xz tar.zst gz bz2 xz zst | Rust |
 
 ```bash

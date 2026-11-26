@@ -37,6 +37,7 @@ struct Task {
     label_in: String,
     label_out: String,
     sheet: Option<String>,
+    page: Option<u32>,
 }
 
 fn run(mut cli: cli::Cli) -> i32 {
@@ -107,6 +108,18 @@ fn run(mut cli: cli::Cli) -> i32 {
             return ui::EXIT_USAGE;
         }
     };
+    if cli.raster && target_ext != "pptx" {
+        ui::error("--raster requires PPTX output");
+        return ui::EXIT_USAGE;
+    }
+    if cli.all_pages && !matches!(util::normalize_ext(&target_ext).as_str(), "png" | "jpg") {
+        ui::error("--all-pages requires PNG or JPG output");
+        return ui::EXIT_USAGE;
+    }
+    if (cli.merge || cli.ocr) && !util::is_pdf(&target_ext) {
+        ui::error("--merge and --ocr require PDF output");
+        return ui::EXIT_USAGE;
+    }
     if !geometry.is_noop() {
         let kind = util::classify_ext(&target_ext);
         if !matches!(kind, util::FormatKind::Image | util::FormatKind::Media) {
@@ -153,6 +166,30 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_FAIL;
     }
 
+    if cli.merge {
+        return if failed == 0 {
+            run_image_merge(&cli, &valid_inputs, &geometry)
+        } else {
+            ui::EXIT_FAIL
+        };
+    }
+    if cli.all_pages
+        && valid_inputs
+            .iter()
+            .any(|p| !util::is_pdf(&util::get_extension(p).unwrap_or_default()))
+    {
+        ui::error("--all-pages requires PDF inputs from files");
+        return ui::EXIT_USAGE;
+    }
+    if (cli.ocr || cli.raster)
+        && valid_inputs.iter().any(|p| {
+            !util::is_stdio(p) && !util::is_pdf(&util::get_extension(p).unwrap_or_default())
+        })
+    {
+        ui::error("--ocr and --raster require PDF inputs");
+        return ui::EXIT_USAGE;
+    }
+
     let multiple = valid_inputs.len() > 1;
     let preserve_structure = cli.preserve_structure
         && cli.recursive
@@ -170,12 +207,19 @@ fn run(mut cli: cli::Cli) -> i32 {
         || (valid_inputs.len() == 1 && util::is_stdio(&valid_inputs[0]) && cli.output.is_none());
 
     let prefix = cli.prefix.clone().unwrap_or_default();
-    let suffix = cli.suffix.clone().unwrap_or_default();
+    let suffix = cli
+        .suffix
+        .as_deref()
+        .unwrap_or(if cli.ocr && cli.output.is_none() {
+            "-ocr"
+        } else {
+            ""
+        });
     if let Err(e) = util::validate_affix("prefix", &prefix) {
         ui::error(e);
         return ui::EXIT_USAGE;
     }
-    if let Err(e) = util::validate_affix("suffix", &suffix) {
+    if let Err(e) = util::validate_affix("suffix", suffix) {
         ui::error(e);
         return ui::EXIT_USAGE;
     }
@@ -191,7 +235,7 @@ fn run(mut cli: cli::Cli) -> i32 {
     let affix = if apply_affix {
         util::StemAffix {
             prefix: &prefix,
-            suffix: &suffix,
+            suffix,
         }
     } else {
         util::StemAffix::NONE
@@ -200,6 +244,18 @@ fn run(mut cli: cli::Cli) -> i32 {
     if stdout_mode && multiple {
         ui::error("stdout ('-') cannot be used with multiple inputs");
         return ui::EXIT_USAGE;
+    }
+
+    if cli.all_pages && stdout_mode {
+        ui::error("cannot use --all-pages with stdout");
+        return ui::EXIT_USAGE;
+    }
+    if cli.all_pages
+        && !cli.dry_run
+        && let Err(e) = deps::ensure_available("pdfinfo", cli.no_auto_install, cli.yes)
+    {
+        ui::error(e);
+        return ui::EXIT_FAIL;
     }
 
     let all_sheets = wants_all_sheets(&cli);
@@ -248,6 +304,23 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_USAGE;
     }
 
+    let plan_outputs = |input: &Path| {
+        expand_outputs(
+            input,
+            &OutputPlan {
+                target_ext: &target_ext,
+                output_arg: cli.output.as_deref(),
+                multiple,
+                all_sheets: split_sheets,
+                all_pages: cli.all_pages,
+                page: cli.page,
+                sheet: sheet_name,
+                structure_root: output_structure_root(preserve_structure, input, &cli.inputs),
+                affix,
+            },
+        )
+    };
+
     if cli.dry_run {
         ui::info("dry-run, files will not be changed");
         for input in &valid_inputs {
@@ -255,29 +328,14 @@ fn run(mut cli: cli::Cli) -> i32 {
                 println!("{} -> -", input.display());
                 continue;
             }
-            let planned = match expand_outputs(
-                input,
-                &OutputPlan {
-                    target_ext: &target_ext,
-                    output_arg: cli.output.as_deref(),
-                    multiple,
-                    all_sheets: split_sheets,
-                    sheet: sheet_name,
-                    structure_root: output_structure_root(
-                        preserve_structure,
-                        input,
-                        &cli.inputs,
-                    ),
-                    affix,
-                },
-            ) {
+            let planned = match plan_outputs(input) {
                 Ok(p) => p,
                 Err(e) => {
                     ui::error(format!("{}: {e}", input.display()));
                     return ui::EXIT_FAIL;
                 }
             };
-            for (output, _) in planned {
+            for PlannedOutput { path: output, .. } in planned {
                 let skip = cli.skip_newer && util::output_up_to_date(input, &output);
                 if skip {
                     println!("{} -> {}  skip", input.display(), output.display());
@@ -289,10 +347,18 @@ fn run(mut cli: cli::Cli) -> i32 {
         return ui::EXIT_OK;
     }
 
+    if cli.ocr
+        && let Err(e) = deps::ensure_available("ocrmypdf", cli.no_auto_install, cli.yes)
+    {
+        ui::error(e);
+        return ui::EXIT_FAIL;
+    }
+
     if let Err(e) = convert::prefetch_deps(
         &valid_inputs,
         &target_ext,
         cli.quality,
+        cli.raster,
         cli.no_auto_install,
         cli.yes,
     )
@@ -308,22 +374,7 @@ fn run(mut cli: cli::Cli) -> i32 {
 
     let mut tasks: Vec<Task> = Vec::with_capacity(valid_inputs.len());
     for input in &valid_inputs {
-        let planned = match expand_outputs(
-            input,
-            &OutputPlan {
-                target_ext: &target_ext,
-                output_arg: cli.output.as_deref(),
-                multiple,
-                all_sheets: split_sheets,
-                sheet: sheet_name,
-                structure_root: output_structure_root(
-                    preserve_structure,
-                    input,
-                    &cli.inputs,
-                ),
-                affix,
-            },
-        ) {
+        let planned = match plan_outputs(input) {
             Ok(p) => p,
             Err(e) => {
                 ui::error(format!("{}: {e}", input.display()));
@@ -331,7 +382,12 @@ fn run(mut cli: cli::Cli) -> i32 {
                 continue;
             }
         };
-        for (output, sheet) in planned {
+        for PlannedOutput {
+            path: output,
+            sheet,
+            page,
+        } in planned
+        {
             if input == &output && !cli.overwrite && !cli.skip_newer {
                 ui::error(format!(
                     "source and destination are the same: {} (use --overwrite to replace in place)",
@@ -346,12 +402,24 @@ fn run(mut cli: cli::Cli) -> i32 {
                 input: input.clone(),
                 output,
                 sheet,
+                page,
             });
         }
     }
 
     if tasks.is_empty() {
         return ui::EXIT_FAIL;
+    }
+
+    if cli.all_pages {
+        let mut outputs = std::collections::HashSet::new();
+        if let Some(task) = tasks.iter().find(|task| !outputs.insert(&task.output)) {
+            ui::error(format!(
+                "multiple pages target the same file: {}",
+                task.output.display()
+            ));
+            return ui::EXIT_USAGE;
+        }
     }
 
     let jobs = resolve_jobs(cli.jobs, tasks.len(), &target_ext);
@@ -388,7 +456,8 @@ fn run(mut cli: cli::Cli) -> i32 {
         verbose,
         geometry: &geometry,
         ffmpeg_threads,
-        page: cli.page,
+        ocr_language: ocr_language(&cli),
+        raster_slides: cli.raster,
         strip_meta: cli.strip_meta,
         timeout: cli.timeout,
     };
@@ -527,7 +596,8 @@ struct JobSpec<'a> {
     verbose: bool,
     geometry: &'a Geometry,
     ffmpeg_threads: usize,
-    page: Option<u32>,
+    ocr_language: Option<&'a str>,
+    raster_slides: bool,
     strip_meta: bool,
     timeout: Option<u64>,
 }
@@ -549,8 +619,10 @@ fn execute_task(t: &Task, spec: &JobSpec<'_>) -> TaskResult {
         geometry: spec.geometry,
         sheet: t.sheet.as_deref(),
         ffmpeg_threads: spec.ffmpeg_threads,
-        page: spec.page,
+        page: t.page,
         strip_meta: spec.strip_meta,
+        ocr_language: spec.ocr_language,
+        raster_slides: spec.raster_slides,
     };
     match convert::convert_file(&t.input, &t.output, spec.target_ext, &opts) {
         Ok(()) => {
@@ -597,15 +669,20 @@ struct OutputPlan<'a> {
     output_arg: Option<&'a Path>,
     multiple: bool,
     all_sheets: bool,
+    all_pages: bool,
+    page: Option<u32>,
     sheet: Option<&'a str>,
     structure_root: Option<&'a Path>,
     affix: util::StemAffix<'a>,
 }
 
-fn expand_outputs(
-    input: &Path,
-    plan: &OutputPlan<'_>,
-) -> Result<Vec<(PathBuf, Option<String>)>, String> {
+struct PlannedOutput {
+    path: PathBuf,
+    sheet: Option<String>,
+    page: Option<u32>,
+}
+
+fn expand_outputs(input: &Path, plan: &OutputPlan<'_>) -> Result<Vec<PlannedOutput>, String> {
     let base = util::resolve_output_path(
         input,
         plan.target_ext,
@@ -616,11 +693,41 @@ fn expand_outputs(
     )?;
     let is_sheet = util::classify_ext(&util::get_extension(input).unwrap_or_default())
         == util::FormatKind::Spreadsheet;
-    if plan.all_sheets && is_sheet {
-        convert::spreadsheet::plan_outputs(input, &base, true, None).map_err(|e| e.to_string())
-    } else {
-        Ok(vec![(base, plan.sheet.map(str::to_string))])
+    if plan.all_pages {
+        let pages = convert::pdf::page_count(input).map_err(|e| e.to_string())?;
+        let width = pages.to_string().len();
+        let stem = base.file_stem().unwrap_or_default();
+        return Ok((1..=pages)
+            .map(|page| {
+                let mut name = stem.to_os_string();
+                name.push(format!("-{page:0width$}.{}", plan.target_ext));
+                PlannedOutput {
+                    path: base.with_file_name(name),
+                    sheet: None,
+                    page: Some(page),
+                }
+            })
+            .collect());
     }
+    if plan.all_sheets && is_sheet {
+        return convert::spreadsheet::plan_outputs(input, &base, true, None)
+            .map(|outputs| {
+                outputs
+                    .into_iter()
+                    .map(|(path, sheet)| PlannedOutput {
+                        path,
+                        sheet,
+                        page: plan.page,
+                    })
+                    .collect()
+            })
+            .map_err(|e| e.to_string());
+    }
+    Ok(vec![PlannedOutput {
+        path: base,
+        sheet: plan.sheet.map(str::to_string),
+        page: plan.page,
+    }])
 }
 
 fn build_geometry(cli: &cli::Cli) -> Result<Geometry, String> {
@@ -632,6 +739,88 @@ fn build_geometry(cli: &cli::Cli) -> Result<Geometry, String> {
         max: cli.max,
         resize,
     })
+}
+
+fn ocr_language(cli: &cli::Cli) -> Option<&str> {
+    cli.ocr.then(|| cli.ocr_lang.as_deref().unwrap_or("eng"))
+}
+
+fn run_image_merge(cli: &cli::Cli, inputs: &[PathBuf], geometry: &Geometry) -> i32 {
+    if inputs
+        .iter()
+        .any(|p| !convert::image_pdf::supports(&util::get_extension(p).unwrap_or_default()))
+    {
+        ui::error("--merge requires JPG, PNG or HEIC/HEIF files");
+        return ui::EXIT_USAGE;
+    }
+    if cli.output.as_deref().is_some_and(util::is_stdio) {
+        ui::error("cannot use --merge with stdout");
+        return ui::EXIT_USAGE;
+    }
+    let output = match util::resolve_output_path(
+        &inputs[0],
+        "pdf",
+        cli.output.as_deref(),
+        false,
+        None,
+        util::StemAffix::NONE,
+    ) {
+        Ok(path) => path,
+        Err(e) => {
+            ui::error(e);
+            return ui::EXIT_USAGE;
+        }
+    };
+    if cli.dry_run {
+        for input in inputs {
+            println!("{} -> {}", input.display(), output.display());
+        }
+        return ui::EXIT_OK;
+    }
+    if cli.skip_newer && inputs.iter().all(|p| util::output_up_to_date(p, &output)) {
+        return ui::EXIT_OK;
+    }
+    if let Err(e) = convert::prefetch_deps(
+        inputs,
+        "pdf",
+        cli.quality,
+        false,
+        cli.no_auto_install,
+        cli.yes,
+    ) {
+        ui::error(e);
+        return ui::EXIT_FAIL;
+    }
+    let opts = ConvertOpts {
+        quality: cli.quality,
+        overwrite: cli.overwrite || cli.skip_newer,
+        ffmpeg_args: None,
+        no_auto_install: cli.no_auto_install,
+        assume_yes: cli.yes,
+        verbose: cli.verbose,
+        geometry,
+        sheet: None,
+        ffmpeg_threads: 0,
+        page: None,
+        strip_meta: cli.strip_meta,
+        ocr_language: None,
+        raster_slides: false,
+    };
+    let _deadline = interrupt::begin_file(cli.timeout);
+    match convert::write_output(&output, opts.overwrite, |staging| {
+        convert::image_pdf::convert(inputs, staging, &opts)
+    }) {
+        Ok(()) => {
+            if !cli.quiet {
+                ui::info(format!("{} images → {}", inputs.len(), output.display()));
+            }
+            ui::EXIT_OK
+        }
+        Err(e) => {
+            ui::error(e);
+            ui::EXIT_FAIL
+        }
+    }
 }
 
 fn run_stdio(
@@ -731,6 +920,8 @@ fn run_stdio(
         ffmpeg_threads: 0,
         page: cli.page,
         strip_meta: cli.strip_meta,
+        ocr_language: ocr_language(&cli),
+        raster_slides: cli.raster,
     };
 
     let result = {

@@ -27,12 +27,17 @@ Examples:
   tummler video.mkv mp4
   tummler slides.pptx pdf
   tummler slides.pdf pptx
+  tummler slides.pdf pptx --raster
   tummler report.docx pdf
   tummler notes.odt pdf
   tummler notes.odt pptx
   tummler deck.odp pptx
   tummler report.pdf png
   tummler report.pdf png --page 2
+  tummler report.pdf jpg --all-pages -o ./pages/
+  tummler photo.jpg scan.png pdf --merge -o scans.pdf
+  tummler budget.xlsx pdf
+  tummler scan.pdf pdf --ocr --ocr-lang eng+rus -o searchable.pdf
   tummler report.pdf docx
   tummler video.mkv mp4 --strip-meta
   tummler --check-deps
@@ -124,6 +129,26 @@ pub struct Cli {
     /// Resize: 50%, 800x, x600, 800x600 (images/video; keep aspect)
     #[arg(long = "resize", value_name = "SPEC")]
     pub resize: Option<String>,
+
+    /// Render PDF pages as slide images in PPTX using Poppler and pandoc
+    #[arg(long, conflicts_with_all = ["page", "all_pages", "merge", "ocr"])]
+    pub raster: bool,
+
+    /// Export each PDF page as a separate PNG or JPG
+    #[arg(long, conflicts_with = "page")]
+    pub all_pages: bool,
+
+    /// Combine JPG, PNG and HEIC inputs into one PDF, in input order
+    #[arg(long, conflicts_with_all = ["all_pages", "ocr"])]
+    pub merge: bool,
+
+    /// Add a searchable text layer to scanned PDF pages (requires OCRmyPDF)
+    #[arg(long, conflicts_with_all = ["page", "all_pages"])]
+    pub ocr: bool,
+
+    /// OCR languages using Tesseract codes, e.g. eng+rus (default: eng)
+    #[arg(long, requires = "ocr", value_name = "LANGS")]
+    pub ocr_lang: Option<String>,
 
     /// PDF page for image output (1-based). Default: all pages stacked in one image
     #[arg(long = "page", value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]

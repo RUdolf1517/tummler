@@ -176,6 +176,21 @@ Longest side in pixels (images/video). Never upscales.
 .BI \-\-page " N
 PDF page for image output (1-based). Default: all pages stacked in one image.
 .TP
+.B \-\-all\-pages
+Export each PDF page to a separate PNG or JPG file.
+.TP
+.B \-\-merge
+Combine JPG, PNG and HEIC input images into a PDF in input order.
+.TP
+.B \-\-ocr
+Add searchable text to scanned PDF pages with OCRmyPDF. Pages with existing text are skipped.
+.TP
+.BI \-\-ocr\-lang " LANGS
+Tesseract language codes such as eng+rus. Default: eng.
+.TP
+.B \-\-raster
+Create one image per slide in PDF to PPTX with Poppler and pandoc.
+.TP
 .B \-\-strip\-meta
 Drop EXIF/GPS and author tags.
 ffmpeg uses
@@ -318,7 +333,11 @@ Documents. A pandoc PDF needs LaTeX.
 .TP
 .B soffice
 Optional. Slides, and Word/PDF layout when already installed. Never auto-installed.
-PDF to PPTX requires LibreOffice Impress and creates one slide per page.
+Editable PDF to PPTX requires LibreOffice Impress.
+XLSX and ODS to PDF uses LibreOffice Calc to retain print layout.
+.TP
+.B OCRmyPDF
+Used for \-\-ocr to produce a searchable PDF.
 .SH ENVIRONMENT
 .TP
 .B NO_COLOR

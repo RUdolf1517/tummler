@@ -40,7 +40,7 @@ fn apply_orientation(
     img
 }
 
-fn load_image(input: &Path) -> Result<image::DynamicImage, TummlerError> {
+pub(super) fn load_image(input: &Path) -> Result<image::DynamicImage, TummlerError> {
     let reader = image::ImageReader::open(input)
         .map_err(map_img)?
         .with_guessed_format()

@@ -49,7 +49,7 @@ fn find_soffice() -> Option<PathBuf> {
 /// Slide conversions need soffice on PATH. tummler will not install LibreOffice.
 pub fn require_soffice() -> Result<PathBuf, String> {
     soffice_bin().ok_or_else(|| {
-        "LibreOffice (soffice) not found in PATH. tummler does not install it; slide conversions (including PDF → PPTX) need an existing install.".into()
+        "LibreOffice (soffice) not found in PATH. tummler does not install it; slide conversions and layout-preserving spreadsheet PDF export need an existing install.".into()
     })
 }
 
@@ -80,7 +80,7 @@ pub fn install_hint(bin: &str) -> String {
             pkg_name("pandoc", false, false),
             "Website:".bold()
         ),
-        "pdftoppm" | "pdftotext" => format!(
+        "pdfinfo" | "pdftoppm" | "pdftotext" => format!(
             "Install poppler ({bin}):\n  {}  winget install -e --id {}\n  {}  brew install {}\n  {}  sudo apt install {}\n  {}  sudo dnf install {}\n  {}  https://poppler.freedesktop.org/",
             "Windows:".bold(),
             winget_id(bin).unwrap(),
@@ -92,6 +92,7 @@ pub fn install_hint(bin: &str) -> String {
             pkg_name(bin, false, false),
             "Website:".bold()
         ),
+        "ocrmypdf" => "Install OCRmyPDF: brew install ocrmypdf (macOS), sudo apt install ocrmypdf (Debian/Ubuntu), or see https://ocrmypdf.readthedocs.io/en/stable/installation.html. Install the Tesseract language data for --ocr-lang.".into(),
         _ => format!("Install {bin} with your system package manager."),
     }
 }
@@ -183,8 +184,8 @@ fn run_install(bin: &str, cmd: &str) -> bool {
 
 fn pkg_name(bin: &str, brew: bool, pacman: bool) -> &str {
     match bin {
-        "pdftoppm" | "pdftotext" if brew || pacman => "poppler",
-        "pdftoppm" | "pdftotext" => "poppler-utils",
+        "pdfinfo" | "pdftoppm" | "pdftotext" if brew || pacman => "poppler",
+        "pdfinfo" | "pdftoppm" | "pdftotext" => "poppler-utils",
         other => other,
     }
 }
@@ -193,7 +194,7 @@ fn winget_id(bin: &str) -> Option<&'static str> {
     Some(match bin {
         "ffmpeg" => "Gyan.FFmpeg",
         "pandoc" => "JohnMacFarlane.Pandoc",
-        "pdftoppm" | "pdftotext" => "oschwartz10612.Poppler",
+        "pdfinfo" | "pdftoppm" | "pdftotext" => "oschwartz10612.Poppler",
         _ => return None,
     })
 }
@@ -339,8 +340,9 @@ fn print_dep_table() {
     let deps = [
         ("ffmpeg", "Audio/video conversion"),
         ("pandoc", "Document conversion"),
-        ("pdftoppm", "PDF → png/jpg (pages stacked, or --page N)"),
+        ("pdftoppm", "PDF → images or raster slides"),
         ("pdftotext", "PDF → text / docx fallback"),
+        ("ocrmypdf", "Searchable PDF via --ocr"),
     ];
 
     for (bin, desc) in deps {
@@ -366,7 +368,7 @@ fn print_dep_table() {
         "○ not found (optional, never auto-installed)".yellow()
     };
     println!(
-        "  {:12}  {lo_status}  — slides; Word/ODT → pdf; PDF → docx/pptx",
+        "  {:12}  {lo_status}  — slides; Word/ODT and XLSX/ODS → pdf; PDF → docx/pptx",
         "soffice".bold()
     );
 

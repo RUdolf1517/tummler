@@ -29,6 +29,9 @@ pub fn convert_pdf(
 ) -> Result<(), TummlerError> {
     let target = normalize_ext(target_ext);
     if is_pdf(&target) {
+        if let Some(language) = opts.ocr_language {
+            return searchable_pdf(input, output, language, opts);
+        }
         std::fs::copy(input, output).map_err(|e| {
             TummlerError::IoError(format!("failed to write {}: {e}", output.display()))
         })?;
@@ -40,6 +43,9 @@ pub fn convert_pdf(
     }
 
     if target == "pptx" {
+        if opts.raster_slides {
+            return raster_pptx(input, output, opts);
+        }
         return soffice::convert_pdf_import(input, output, &target);
     }
 
@@ -51,6 +57,80 @@ pub fn convert_pdf(
         "pdf".into(),
         target,
     ))
+}
+
+fn raster_pptx(input: &Path, output: &Path, opts: &ConvertOpts<'_>) -> Result<(), TummlerError> {
+    let tmp = tempfile::tempdir()?;
+    let (pages, _) = raster_pages(input, tmp.path(), opts)?;
+    let mut markdown = String::new();
+    for (index, page) in pages.iter().enumerate() {
+        use std::fmt::Write;
+        if index > 0 {
+            markdown.push_str("\n---\n\n");
+        }
+        let file = page.file_name().unwrap_or_default().to_string_lossy();
+        writeln!(markdown, "![]({file})").unwrap();
+    }
+    let source = tmp.path().join("slides.md");
+    std::fs::write(&source, markdown)?;
+    deps::ensure_available("pandoc", opts.no_auto_install, opts.assume_yes)
+        .map_err(|e| TummlerError::DependencyMissing("pandoc".into(), e))?;
+    let target = std::path::absolute(output)?;
+    let result = interrupt::run(
+        Command::new("pandoc")
+            .arg("-o")
+            .arg(target)
+            .arg("slides.md")
+            .current_dir(tmp.path()),
+    )?;
+    if !result.status.success() {
+        return Err(TummlerError::PdfError(crate::hint::format_engine_fail(
+            "pandoc",
+            result.status.code(),
+            &String::from_utf8_lossy(&result.stderr),
+            &String::from_utf8_lossy(&result.stdout),
+        )));
+    }
+    Ok(())
+}
+
+fn searchable_pdf(
+    input: &Path,
+    output: &Path,
+    language: &str,
+    opts: &ConvertOpts<'_>,
+) -> Result<(), TummlerError> {
+    deps::ensure_available("ocrmypdf", opts.no_auto_install, opts.assume_yes)
+        .map_err(|e| TummlerError::DependencyMissing("ocrmypdf".into(), e))?;
+    let result = interrupt::run(
+        Command::new("ocrmypdf")
+            .args(["--skip-text", "--output-type", "pdf", "--optimize", "0"])
+            .arg(format!("--language={language}"))
+            .arg("--")
+            .arg(input)
+            .arg(output),
+    )?;
+    if !result.status.success() {
+        return Err(TummlerError::PdfError(crate::hint::format_engine_fail(
+            "OCRmyPDF",
+            result.status.code(),
+            &String::from_utf8_lossy(&result.stderr),
+            &String::from_utf8_lossy(&result.stdout),
+        )));
+    }
+    Ok(())
+}
+
+pub fn page_count(input: &Path) -> Result<u32, TummlerError> {
+    pdfinfo_text(input, None)?
+        .as_deref()
+        .and_then(parse_pdfinfo_pages)
+        .filter(|&pages| pages > 0)
+        .ok_or_else(|| {
+            TummlerError::PdfError(
+                "could not read page count with pdfinfo (Poppler); check that the PDF opens".into(),
+            )
+        })
 }
 
 fn pdf_to_image(
@@ -187,7 +267,13 @@ fn parse_pdfinfo_page_pts(text: &str) -> Option<(f32, f32)> {
     let mut size = None;
     let mut rot = 0i32;
     for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("Page size:") {
+        let Some((label, rest)) = line
+            .strip_prefix("Page ")
+            .and_then(|line| line.split_once(':'))
+        else {
+            continue;
+        };
+        if label.ends_with("size") {
             let mut parts = rest.split_whitespace();
             let w: f32 = parts.next()?.parse().ok()?;
             if parts.next()? != "x" {
@@ -195,7 +281,7 @@ fn parse_pdfinfo_page_pts(text: &str) -> Option<(f32, f32)> {
             }
             let h: f32 = parts.next()?.parse().ok()?;
             size = Some((w, h));
-        } else if let Some(rest) = line.strip_prefix("Page rot:") {
+        } else if label.ends_with("rot") {
             rot = rest.trim().parse().unwrap_or(0);
         }
     }
@@ -216,9 +302,13 @@ fn parse_pdfinfo_pages(text: &str) -> Option<u32> {
     None
 }
 
-fn pdfinfo_text(input: &Path) -> Result<Option<String>, TummlerError> {
+fn pdfinfo_text(input: &Path, page: Option<u32>) -> Result<Option<String>, TummlerError> {
     let mut cmd = Command::new("pdfinfo");
-    cmd.arg(input);
+    if let Some(page) = page {
+        let page = page.to_string();
+        cmd.args(["-f", &page, "-l", &page]);
+    }
+    cmd.env("LC_ALL", "C").arg(input);
     match interrupt::run(&mut cmd) {
         Ok(out) if out.status.success() => {
             Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
@@ -258,7 +348,11 @@ fn raster_pages(
     deps::ensure_available("pdftoppm", opts.no_auto_install, opts.assume_yes)
         .map_err(|e| TummlerError::DependencyMissing("pdftoppm".into(), e))?;
 
-    let info = pdfinfo_text(input)?;
+    let info = if opts.geometry.is_noop() && opts.page.is_none() {
+        None
+    } else {
+        pdfinfo_text(input, opts.page)?
+    };
     let info = info.as_deref();
     if let Some(want) = opts.page
         && let Some(n) = info.and_then(parse_pdfinfo_pages)
@@ -478,6 +572,8 @@ mod tests {
             ffmpeg_threads: 0,
             page: None,
             strip_meta: false,
+            ocr_language: None,
+            raster_slides: false,
         }
     }
 
@@ -767,6 +863,7 @@ mod tests {
             std::slice::from_ref(&input),
             "pptx",
             None,
+            false,
             true,
             false,
         );
@@ -789,6 +886,46 @@ mod tests {
                 .read_to_string(&mut xml)
                 .unwrap();
             assert!(xml.contains(expected), "{xml}");
+        }
+        assert!(deck.by_name("ppt/slides/slide3.xml").is_err());
+    }
+
+    #[test]
+    fn pdf_to_raster_pptx() {
+        use std::io::Read;
+
+        if !(deps::is_available("pandoc") && deps::is_available("pdftoppm")) {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("source pages.pdf");
+        let out = dir.path().join("raster.pptx");
+        std::fs::write(&input, sample_pdf_pages(&["First page", "Second page"])).unwrap();
+
+        crate::convert::prefetch_deps(
+            std::slice::from_ref(&input),
+            "pptx",
+            None,
+            true,
+            true,
+            false,
+        )
+        .unwrap();
+        let geometry = Geometry::default();
+        let options = ConvertOpts {
+            raster_slides: true,
+            ..opts(&geometry, true)
+        };
+        crate::convert::convert_file(&input, &out, "pptx", &options).unwrap();
+
+        let mut deck = zip::ZipArchive::new(std::fs::File::open(out).unwrap()).unwrap();
+        for index in [1, 2] {
+            let mut xml = String::new();
+            deck.by_name(&format!("ppt/slides/slide{index}.xml"))
+                .unwrap()
+                .read_to_string(&mut xml)
+                .unwrap();
+            assert!(xml.contains("<p:pic>"), "{xml}");
         }
         assert!(deck.by_name("ppt/slides/slide3.xml").is_err());
     }

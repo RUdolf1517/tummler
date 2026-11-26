@@ -1,6 +1,7 @@
 pub mod archive;
 pub mod document;
 pub mod image;
+pub mod image_pdf;
 pub mod media;
 pub mod pdf;
 pub mod soffice;
@@ -31,6 +32,8 @@ pub struct ConvertOpts<'a> {
     pub page: Option<u32>,
     /// Drop EXIF/GPS/author tags where the engine supports it.
     pub strip_meta: bool,
+    pub ocr_language: Option<&'a str>,
+    pub raster_slides: bool,
 }
 
 /// Check external dependencies once before a parallel batch.
@@ -38,6 +41,7 @@ pub fn prefetch_deps(
     inputs: &[std::path::PathBuf],
     target_ext: &str,
     quality: Option<u8>,
+    raster_slides: bool,
     no_auto: bool,
     assume_yes: bool,
 ) -> Result<(), TummlerError> {
@@ -47,14 +51,21 @@ pub fn prefetch_deps(
     let lossy_webp = target == "webp" && quality.is_some();
     let mut need_ffmpeg =
         target_kind == FormatKind::Media || is_ffmpeg_image(target_ext) || lossy_webp;
+    if is_pdf(&target) {
+        need_ffmpeg |= inputs
+            .iter()
+            .filter_map(|path| get_extension(path))
+            .any(|ext| image_pdf::supports(&ext) && is_ffmpeg_image(&ext));
+    }
     let soffice_present = deps::soffice_bin().is_some();
     let need_pandoc = target_kind == FormatKind::Document
         && inputs.iter().any(|p| {
             let ext = get_extension(p).unwrap_or_default();
             if is_pdf(&ext) {
-                return pdf::is_pdf_doc_target(&target)
-                    && target != "txt"
-                    && !(soffice_present && soffice::prefers_soffice(&ext, target_ext));
+                return raster_slides
+                    || pdf::is_pdf_doc_target(&target)
+                        && target != "txt"
+                        && !(soffice_present && soffice::prefers_soffice(&ext, target_ext));
             }
             matches!(
                 classify_ext(&ext),
@@ -63,10 +74,11 @@ pub fn prefetch_deps(
                 && !soffice::is_ooxml_copy(&ext, target_ext)
                 && !(soffice_present && soffice::prefers_soffice(&ext, target_ext))
         });
-    let need_soffice = inputs
-        .iter()
-        .any(|p| soffice::needs_soffice(&get_extension(p).unwrap_or_default(), target_ext));
-    let need_pdftoppm = target_kind == FormatKind::Image
+    let need_soffice = inputs.iter().any(|p| {
+        let ext = get_extension(p).unwrap_or_default();
+        !(raster_slides && is_pdf(&ext)) && soffice::needs_soffice(&ext, target_ext)
+    });
+    let need_pdftoppm = (target_kind == FormatKind::Image || raster_slides)
         && inputs
             .iter()
             .any(|p| is_pdf(&get_extension(p).unwrap_or_default()));
@@ -147,7 +159,121 @@ pub fn convert_file(
         );
     }
 
-    if output.exists() && !opts.overwrite {
+    write_output(output, opts.overwrite, |staging| {
+        dispatch(
+            input,
+            staging,
+            &source_ext,
+            &target_ext,
+            source_kind,
+            target_kind,
+            opts,
+        )
+    })
+}
+
+fn dispatch(
+    input: &Path,
+    staging: &Path,
+    source_ext: &str,
+    target_ext: &str,
+    source_kind: FormatKind,
+    target_kind: FormatKind,
+    opts: &ConvertOpts<'_>,
+) -> Result<(), TummlerError> {
+    let via_ffmpeg = || {
+        media::convert_media(
+            input,
+            staging,
+            opts.quality,
+            opts.ffmpeg_args,
+            opts.no_auto_install,
+            opts.assume_yes,
+            opts.geometry,
+            opts.ffmpeg_threads,
+            opts.strip_meta,
+        )
+    };
+
+    if soffice::is_ooxml_copy(source_ext, target_ext) {
+        soffice::copy_ooxml_deck(input, staging)
+    } else if is_pdf(source_ext) {
+        pdf::convert_pdf(input, staging, target_ext, opts)
+    } else if opts.ocr_language.is_some() || opts.raster_slides {
+        Err(TummlerError::PdfError(
+            "--ocr and --raster require a PDF input".into(),
+        ))
+    } else if is_pdf(target_ext) && image_pdf::supports(source_ext) {
+        image_pdf::convert(&[input], staging, opts)
+    } else if soffice::needs_soffice(source_ext, target_ext)
+        || (soffice::prefers_soffice(source_ext, target_ext) && deps::soffice_bin().is_some())
+    {
+        soffice::convert_office(input, staging, target_ext)
+    } else if spreadsheet::can_write_xlsx(source_ext) && spreadsheet::is_xlsx_ext(target_ext) {
+        spreadsheet::convert_to_xlsx(input, staging, opts.sheet)
+    } else if source_kind == FormatKind::Spreadsheet {
+        if spreadsheet::is_tabular_ext(target_ext) {
+            spreadsheet::convert_spreadsheet(input, staging, target_ext, opts.sheet)
+        } else {
+            Err(TummlerError::UnsupportedConversion(
+                source_ext.into(),
+                target_ext.into(),
+            ))
+        }
+    } else {
+        match target_kind {
+            FormatKind::Image => {
+                if is_svg(source_ext) {
+                    image::convert_image(input, staging, opts.quality, opts.geometry)
+                } else if is_ffmpeg_image(source_ext)
+                    || is_ffmpeg_image(target_ext)
+                    || (target_ext == "webp" && opts.quality.is_some())
+                {
+                    via_ffmpeg()
+                } else {
+                    match source_kind {
+                        FormatKind::Media | FormatKind::Document => via_ffmpeg(),
+                        FormatKind::Archive | FormatKind::Spreadsheet => {
+                            Err(TummlerError::UnsupportedConversion(
+                                source_ext.into(),
+                                target_ext.into(),
+                            ))
+                        }
+                        FormatKind::Unknown => {
+                            match image::convert_image(input, staging, opts.quality, opts.geometry)
+                            {
+                                Ok(()) => Ok(()),
+                                Err(_) => via_ffmpeg(),
+                            }
+                        }
+                        FormatKind::Image => {
+                            image::convert_image(input, staging, opts.quality, opts.geometry)
+                        }
+                    }
+                }
+            }
+            FormatKind::Media => via_ffmpeg(),
+            FormatKind::Document => document::convert_document(
+                input,
+                staging,
+                opts.no_auto_install,
+                opts.assume_yes,
+                opts.strip_meta,
+            ),
+            FormatKind::Archive => archive::convert_archive(input, staging),
+            FormatKind::Spreadsheet | FormatKind::Unknown => {
+                Err(TummlerError::UnsupportedFormat(target_ext.into()))
+            }
+        }
+    }
+}
+
+pub fn write_output(
+    output: &Path,
+    overwrite: bool,
+    convert: impl FnOnce(&Path) -> Result<(), TummlerError>,
+) -> Result<(), TummlerError> {
+    if output.exists() && !overwrite {
         return Err(TummlerError::Other(format!(
             "file already exists: {} (use --overwrite / --force)",
             output.display()
@@ -166,89 +292,7 @@ pub fn convert_file(
         let _ = std::fs::remove_file(&staging);
     }
 
-    let via_ffmpeg = || {
-        media::convert_media(
-            input,
-            &staging,
-            opts.quality,
-            opts.ffmpeg_args,
-            opts.no_auto_install,
-            opts.assume_yes,
-            opts.geometry,
-            opts.ffmpeg_threads,
-            opts.strip_meta,
-        )
-    };
-
-    let result = if soffice::is_ooxml_copy(&source_ext, &target_ext) {
-        soffice::copy_ooxml_deck(input, &staging)
-    } else if is_pdf(&source_ext) {
-        pdf::convert_pdf(input, &staging, &target_ext, opts)
-    } else if soffice::needs_soffice(&source_ext, &target_ext)
-        || (soffice::prefers_soffice(&source_ext, &target_ext) && deps::soffice_bin().is_some())
-    {
-        soffice::convert_office(input, &staging, &target_ext)
-    } else if spreadsheet::can_write_xlsx(&source_ext) && spreadsheet::is_xlsx_ext(&target_ext) {
-        spreadsheet::convert_to_xlsx(input, &staging, opts.sheet)
-    } else if source_kind == FormatKind::Spreadsheet {
-        if spreadsheet::is_tabular_ext(&target_ext) {
-            spreadsheet::convert_spreadsheet(input, &staging, &target_ext, opts.sheet)
-        } else {
-            Err(TummlerError::UnsupportedConversion(
-                source_ext,
-                target_ext.clone(),
-            ))
-        }
-    } else {
-        match target_kind {
-            FormatKind::Image => {
-                if is_svg(&source_ext) {
-                    image::convert_image(input, &staging, opts.quality, opts.geometry)
-                } else if is_ffmpeg_image(&source_ext)
-                    || is_ffmpeg_image(&target_ext)
-                    || (target_ext == "webp" && opts.quality.is_some())
-                {
-                    via_ffmpeg()
-                } else {
-                    match source_kind {
-                        FormatKind::Media | FormatKind::Document => via_ffmpeg(),
-                        FormatKind::Archive | FormatKind::Spreadsheet => {
-                            Err(TummlerError::UnsupportedConversion(
-                                source_ext,
-                                target_ext.clone(),
-                            ))
-                        }
-                        FormatKind::Unknown => {
-                            match image::convert_image(input, &staging, opts.quality, opts.geometry)
-                            {
-                                Ok(()) => Ok(()),
-                                Err(_) => via_ffmpeg(),
-                            }
-                        }
-                        FormatKind::Image => {
-                            image::convert_image(input, &staging, opts.quality, opts.geometry)
-                        }
-                    }
-                }
-            }
-            FormatKind::Media => via_ffmpeg(),
-            FormatKind::Document => {
-                document::convert_document(
-                    input,
-                    &staging,
-                    opts.no_auto_install,
-                    opts.assume_yes,
-                    opts.strip_meta,
-                )
-            }
-            FormatKind::Archive => archive::convert_archive(input, &staging),
-            FormatKind::Spreadsheet | FormatKind::Unknown => {
-                Err(TummlerError::UnsupportedFormat(target_ext.clone()))
-            }
-        }
-    };
-
-    match result {
+    match convert(&staging) {
         Ok(()) => {
             replace_output(&staging, output).map_err(|e| {
                 let _ = std::fs::remove_file(&staging);
