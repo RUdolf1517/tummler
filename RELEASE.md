@@ -49,3 +49,11 @@ One CLI that mixes any file into any format. Images, audio, video, documents, ar
 ```
 
 Topics: `rust` `cli` `converter` `ffmpeg` `image` `transcode` `heic` `webp` `macos` `linux` `pandoc`
+
+## crates.io
+
+The same release tag publishes the matching Cargo version after the GitHub release. Re-running the workflow skips a version that crates.io already has.
+
+For the first publish, sign in to crates.io as `RUdolf1517`, create a token for `tummler` with `publish-new` permission and save it as the repository's Actions secret `CARGO_REGISTRY_TOKEN`. Add `publish-update` permission if you plan to keep using this secret for updates.
+
+For token-free updates, add a Trusted Publisher in the crate's settings after the first release. Use owner `RUdolf1517`, repository `tummler`, workflow `release.yml` and leave the environment field empty. You can then remove the GitHub secret and revoke the initial token.
