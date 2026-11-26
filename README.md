@@ -65,7 +65,7 @@ Windows x64 — until `RUdolf1517.tummler` is in the winget community source, in
 git clone https://github.com/RUdolf1517/tummler
 cd tummler
 winget settings --enable LocalManifestFiles
-winget install --manifest .\packaging\winget\0.4.0
+winget install --manifest .\packaging\winget\0.5.0
 ```
 
 `LocalManifestFiles` is once, as Administrator. After microsoft/winget-pkgs accepts the package: `winget install -e --id RUdolf1517.tummler`. Zip only: [Releases](https://github.com/RUdolf1517/tummler/releases/latest) → `tummler-x86_64-pc-windows-msvc.zip`, put `tummler.exe` on PATH.
